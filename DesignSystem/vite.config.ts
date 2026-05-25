@@ -17,6 +17,11 @@ function figmaAssetResolver() {
 }
 
 export default defineConfig({
+  // Use relative base path for GitHub Pages subpath deployments
+  // (e.g. https://user.github.io/repo-name/). Change to '/' for a
+  // custom domain or root-level user/org site.
+  base: './',
+
   plugins: [
     figmaAssetResolver(),
     // The React and Tailwind plugins are both required for Make, even if
