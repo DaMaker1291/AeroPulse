@@ -4,25 +4,49 @@ import { FileText, AlertTriangle, CheckCircle2, TrendingUp, Activity } from 'luc
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
-export function Page3Triage() {
+interface TriageData {
+  bilateralSymmetry: number;
+  neuromuscularLag: number;
+  vascularCompliance: number;
+  tremorPeakHz: number;
+}
+
+interface FftData {
+  freqs: number[];
+  power: number[];
+}
+
+interface Page3Props {
+  backendTriage?: TriageData;
+  backendFft?: FftData;
+}
+
+export function Page3Triage({ backendTriage, backendFft }: Page3Props) {
   const [reportGenerated, setReportGenerated] = useState(false);
 
   const metrics = {
-    bilateralSymmetry: 94,
-    neuromuscularLag: 42,
-    vascularCompliance: 'MODERATE STIFFENING',
+    bilateralSymmetry: backendTriage?.bilateralSymmetry ?? 94,
+    neuromuscularLag: backendTriage?.neuromuscularLag ?? 42,
+    vascularCompliance: (backendTriage?.vascularCompliance ?? 92) > 80 ? 'NORMAL COMPLIANCE' : 'MODERATE STIFFENING',
   };
 
-  const psdData = useMemo(() => Array.from({ length: 50 }, (_, i) => {
-    const freq = i * 0.5;
-    let amplitude;
-    if (freq >= 8 && freq <= 12) {
-      amplitude = 45 + Math.random() * 15 + (10 - Math.abs(freq - 10)) * 3;
-    } else {
-      amplitude = 15 + Math.random() * 10 - Math.abs(freq - 10) * 0.5;
+  const psdData = useMemo(() => {
+    if (backendFft?.freqs?.length && backendFft?.power?.length) {
+      return backendFft.freqs
+        .map((f, i) => ({ freq: f, amplitude: Math.max(0, (backendFft.power[i] ?? 0) * 100) }))
+        .filter(d => d.freq >= 0 && d.freq <= 25);
     }
-    return { freq, amplitude: Math.max(0, amplitude) };
-  }), []);
+    return Array.from({ length: 50 }, (_, i) => {
+      const freq = i * 0.5;
+      let amplitude;
+      if (freq >= 8 && freq <= 12) {
+        amplitude = 45 + Math.random() * 15 + (10 - Math.abs(freq - 10)) * 3;
+      } else {
+        amplitude = 15 + Math.random() * 10 - Math.abs(freq - 10) * 0.5;
+      }
+      return { freq, amplitude: Math.max(0, amplitude) };
+    });
+  }, [backendFft]);
 
   const alertLevel = psdData.some(d => d.freq >= 8 && d.freq <= 12 && d.amplitude > 50) ? 'elevated' : 'normal';
 

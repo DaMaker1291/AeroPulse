@@ -2187,6 +2187,8 @@ class WebSocketServer:
         spo2 = self.hub.get_spo2()
         sbp, dbp = self.hub.get_bp()
         rppg, chest, m3, m4 = self.hub.get_buffers()
+        sym, lag, comp, tremor_hz = self.hub.get_triage()
+        fft_f, fft_p = self.hub.get_fft_data()
         return {
             "targetStatus": "locked" if self.hub.is_face_tracked() else "standby",
             "cameraConnected": self.hub.is_camera_connected(),
@@ -2201,6 +2203,16 @@ class WebSocketServer:
             "rppg_wave": rppg[-50:],
             "m3_wave": m3[-50:],
             "m4_wave": m4[-50:],
+            "triage": {
+                "bilateralSymmetry": round(sym, 1),
+                "neuromuscularLag": round(lag, 1),
+                "vascularCompliance": round(comp, 1),
+                "tremorPeakHz": round(tremor_hz, 2),
+            },
+            "fft": {
+                "freqs": fft_f[-100:],
+                "power": fft_p[-100:],
+            },
         }
 
 class WSThread(Thread):

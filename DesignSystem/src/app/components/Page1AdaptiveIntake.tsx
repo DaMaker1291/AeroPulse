@@ -4,6 +4,7 @@ import { Brain, ChevronRight } from 'lucide-react';
 
 interface Page1Props {
   onUnlockNavigation: () => void;
+  targetStatus?: 'locked' | 'acquiring' | 'standby';
 }
 
 const questions = [
@@ -13,10 +14,10 @@ const questions = [
   { id: 4, text: "Have you had difficulty with fine motor tasks like writing or buttoning clothes?", category: "Dexterity" },
 ];
 
-export function Page1AdaptiveIntake({ onUnlockNavigation }: Page1Props) {
+export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTargetStatus }: Page1Props) {
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
-  const [targetStatus, setTargetStatus] = useState<'acquiring' | 'locked' | 'standby'>('standby');
+  const [targetStatus, setTargetStatus] = useState<'acquiring' | 'locked' | 'standby'>(propTargetStatus ?? 'standby');
   const [panValue, setPanValue] = useState(50);
   const [tiltValue, setTiltValue] = useState(50);
   const [aiConfidence, setAiConfidence] = useState(0.74);
@@ -30,6 +31,15 @@ export function Page1AdaptiveIntake({ onUnlockNavigation }: Page1Props) {
   }, []);
 
   useEffect(() => {
+    if (propTargetStatus === 'locked') {
+      setTargetStatus('locked');
+      onUnlockNavigation();
+      return;
+    }
+    if (propTargetStatus === 'acquiring') {
+      setTargetStatus('acquiring');
+      return;
+    }
     const timer = setTimeout(() => {
       setTargetStatus('acquiring');
       setTimeout(() => {
@@ -38,7 +48,7 @@ export function Page1AdaptiveIntake({ onUnlockNavigation }: Page1Props) {
       }, 2200);
     }, 2800);
     return () => clearTimeout(timer);
-  }, []);
+  }, [propTargetStatus]);
 
   const handleAnswer = (answer: string) => {
     setAnswers(prev => [...prev, answer]);

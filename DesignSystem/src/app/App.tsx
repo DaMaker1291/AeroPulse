@@ -7,6 +7,7 @@ import { Page1AdaptiveIntake } from './components/Page1AdaptiveIntake';
 import { Page2Biometric } from './components/Page2Biometric';
 import { Page3Triage } from './components/Page3Triage';
 import { Page4Enterprise } from './components/Page4Enterprise';
+import { useWebSocket } from '../useWebSocket';
 
 type PageKey = 'intake' | 'biometric' | 'triage' | 'enterprise';
 
@@ -29,6 +30,8 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<PageKey>('intake');
   const [unlockedPages, setUnlockedPages] = useState<Set<PageKey>>(new Set(['intake']));
   const [completedPages, setCompletedPages] = useState<Set<PageKey>>(new Set());
+
+  const backend = useWebSocket();
 
   const handleAuth = (userData: UserData) => {
     setUser(userData);
@@ -111,11 +114,22 @@ export default function App() {
             <div className="text-[10px] text-[#8E8E93] tracking-widest uppercase font-medium mb-2">Active Session</div>
             <div className="flex items-center gap-2">
               <div className="flex gap-0.5">
-                <div className="w-0.5 h-3 bg-[#30D158] rounded-full" style={{ animation: 'pulse 1.4s ease-in-out infinite' }} />
-                <div className="w-0.5 h-3 bg-[#30D158] rounded-full" style={{ animation: 'pulse 1.4s ease-in-out 0.2s infinite' }} />
-                <div className="w-0.5 h-3 bg-[#30D158] rounded-full" style={{ animation: 'pulse 1.4s ease-in-out 0.4s infinite' }} />
+                <div className="w-0.5 h-3 rounded-full" style={{
+                  backgroundColor: backend.cameraConnected ? '#30D158' : '#FF453A',
+                  animation: backend.cameraConnected ? 'pulse 1.4s ease-in-out infinite' : 'none',
+                }} />
+                <div className="w-0.5 h-3 rounded-full" style={{
+                  backgroundColor: backend.cameraConnected ? '#30D158' : '#FF453A',
+                  animation: backend.cameraConnected ? 'pulse 1.4s ease-in-out 0.2s infinite' : 'none',
+                }} />
+                <div className="w-0.5 h-3 rounded-full" style={{
+                  backgroundColor: backend.cameraConnected ? '#30D158' : '#FF453A',
+                  animation: backend.cameraConnected ? 'pulse 1.4s ease-in-out 0.4s infinite' : 'none',
+                }} />
               </div>
-              <span className="text-[12px] text-[#8E8E93]">Signal Online · 60 Hz</span>
+              <span className="text-[12px] text-[#8E8E93]">
+                {backend.cameraConnected ? 'Signal Online · 60 Hz' : 'Camera Offline'}
+              </span>
             </div>
           </div>
 
@@ -213,9 +227,28 @@ export default function App() {
                 transition={{ duration: 0.18, ease: 'easeOut' }}
                 className="h-full"
               >
-                {currentPage === 'intake' && <Page1AdaptiveIntake onUnlockNavigation={handleUnlockNavigation} />}
-                {currentPage === 'biometric' && <Page2Biometric onScanComplete={handleScanComplete} />}
-                {currentPage === 'triage' && <Page3Triage />}
+                {currentPage === 'intake' && (
+                  <Page1AdaptiveIntake
+                    onUnlockNavigation={handleUnlockNavigation}
+                    targetStatus={backend.targetStatus}
+                  />
+                )}
+                {currentPage === 'biometric' && (
+                  <Page2Biometric
+                    onScanComplete={handleScanComplete}
+                    backendVitals={backend.vitals}
+                    backendRppgWave={backend.rppgWave}
+                    backendM3Wave={backend.m3Wave}
+                    backendM4Wave={backend.m4Wave}
+                    cameraConnected={backend.cameraConnected}
+                  />
+                )}
+                {currentPage === 'triage' && (
+                  <Page3Triage
+                    backendTriage={backend.triage}
+                    backendFft={backend.fft}
+                  />
+                )}
                 {currentPage === 'enterprise' && <Page4Enterprise />}
               </motion.div>
             </AnimatePresence>

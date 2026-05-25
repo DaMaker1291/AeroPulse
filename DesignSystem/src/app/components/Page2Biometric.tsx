@@ -3,11 +3,23 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } fro
 import { motion } from 'motion/react';
 import { Activity, Heart, Wind, Thermometer, Droplets } from 'lucide-react';
 
-interface Page2Props {
-  onScanComplete: () => void;
+interface VitalsData {
+  heartRate: number;
+  respiration: number;
+  bloodOxygen: number;
+  temperature: number;
 }
 
-export function Page2Biometric({ onScanComplete }: Page2Props) {
+interface Page2Props {
+  onScanComplete: () => void;
+  backendVitals?: VitalsData;
+  backendRppgWave?: number[];
+  backendM3Wave?: number[];
+  backendM4Wave?: number[];
+  cameraConnected?: boolean;
+}
+
+export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave, backendM3Wave, backendM4Wave, cameraConnected }: Page2Props) {
   const [scanning, setScanning] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const [scanMode, setScanMode] = useState<'compression' | 'tension'>('tension');
@@ -16,7 +28,9 @@ export function Page2Biometric({ onScanComplete }: Page2Props) {
   const [vitals, setVitals] = useState({ heartRate: 74, respiration: 14, bloodOxygen: 98, temperature: 36.8 });
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    if (backendRppgWave && backendRppgWave.length > 0) {
+      setWaveData1(backendRppgWave.map((v, i) => ({ time: i, value: 50 + v * 15 })).slice(-60));
+    } else {
       setWaveData1(prev => {
         const next = [...prev];
         const t = prev.length;
@@ -24,6 +38,17 @@ export function Page2Biometric({ onScanComplete }: Page2Props) {
         if (next.length > 60) next.shift();
         return next;
       });
+    }
+  }, [backendRppgWave]);
+
+  useEffect(() => {
+    if (backendM3Wave && backendM3Wave.length > 0 && backendM4Wave && backendM4Wave.length > 0) {
+      setWaveData2(backendM3Wave.map((v, i) => ({
+        time: i,
+        leftHand: 50 + v * 2,
+        rightHand: i < backendM4Wave.length ? 50 + backendM4Wave[i] * 2 : 50,
+      })).slice(-60));
+    } else {
       setWaveData2(prev => {
         const next = [...prev];
         const t = prev.length;
@@ -35,17 +60,19 @@ export function Page2Biometric({ onScanComplete }: Page2Props) {
         if (next.length > 60) next.shift();
         return next;
       });
-      if (Math.random() > 0.88) {
-        setVitals(prev => ({
-          heartRate: Math.max(60, Math.min(110, prev.heartRate + (Math.random() - 0.5) * 2)),
-          respiration: Math.max(10, Math.min(22, prev.respiration + (Math.random() - 0.5) * 0.5)),
-          bloodOxygen: Math.min(100, Math.max(95, prev.bloodOxygen + (Math.random() - 0.5) * 0.3)),
-          temperature: Math.max(36, Math.min(37.5, prev.temperature + (Math.random() - 0.5) * 0.05)),
-        }));
-      }
-    }, 100);
-    return () => clearInterval(interval);
-  }, []);
+    }
+  }, [backendM3Wave, backendM4Wave]);
+
+  useEffect(() => {
+    if (backendVitals && backendVitals.heartRate > 0) {
+      setVitals(prev => ({
+        heartRate: backendVitals.heartRate ?? prev.heartRate,
+        respiration: backendVitals.respiration ?? prev.respiration,
+        bloodOxygen: backendVitals.bloodOxygen ?? prev.bloodOxygen,
+        temperature: backendVitals.temperature ?? prev.temperature,
+      }));
+    }
+  }, [backendVitals]);
 
   useEffect(() => {
     if (scanning && countdown > 0) {
