@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import { motion } from 'motion/react';
 import { Activity, Heart, Wind, Thermometer, Droplets } from 'lucide-react';
@@ -19,6 +19,10 @@ interface Page2Props {
   cameraConnected?: boolean;
 }
 
+function clamp(v: number, min = 0, max = 100): number {
+  return Math.min(max, Math.max(min, v));
+}
+
 export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave, backendM3Wave, backendM4Wave, cameraConnected }: Page2Props) {
   const [scanning, setScanning] = useState(false);
   const [countdown, setCountdown] = useState(10);
@@ -26,42 +30,68 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
   const [waveData1, setWaveData1] = useState<Array<{ time: number; value: number }>>([]);
   const [waveData2, setWaveData2] = useState<Array<{ time: number; leftHand: number; rightHand: number }>>([]);
   const [vitals, setVitals] = useState({ heartRate: 74, respiration: 14, bloodOxygen: 98, temperature: 36.8 });
+  const tickRef = useRef(0);
 
+  // Stable rPPG waveform: append new point from backend, maintain fixed window
   useEffect(() => {
     if (backendRppgWave && backendRppgWave.length > 0) {
-      setWaveData1(backendRppgWave.map((v, i) => ({ time: i, value: 50 + v * 15 })).slice(-60));
-    } else {
+      const newVal = 50 + clamp(backendRppgWave[backendRppgWave.length - 1] * 15, -45, 45);
+      tickRef.current += 1;
       setWaveData1(prev => {
-        const next = [...prev];
-        const t = prev.length;
-        next.push({ time: t, value: 50 + 30 * Math.sin(t * 0.3) + Math.random() * 5 });
+        const next = [...prev, { time: tickRef.current, value: newVal }];
         if (next.length > 60) next.shift();
         return next;
       });
     }
-  }, [backendRppgWave]);
+  }, [backendRppgWave?.length]);
 
+  // Fallback mock when no backend rPPG data
+  useEffect(() => {
+    if (!backendRppgWave || backendRppgWave.length === 0) {
+      const interval = setInterval(() => {
+        tickRef.current += 1;
+        const t = tickRef.current;
+        setWaveData1(prev => {
+          const next = [...prev, { time: t, value: clamp(50 + 30 * Math.sin(t * 0.3) + Math.random() * 5, 5, 95) }];
+          if (next.length > 60) next.shift();
+          return next;
+        });
+      }, 100);
+      return () => clearInterval(interval);
+    }
+  }, [!!backendRppgWave?.length]);
+
+  // Stable mechanical waveform
   useEffect(() => {
     if (backendM3Wave && backendM3Wave.length > 0 && backendM4Wave && backendM4Wave.length > 0) {
-      setWaveData2(backendM3Wave.map((v, i) => ({
-        time: i,
-        leftHand: 50 + v * 2,
-        rightHand: i < backendM4Wave.length ? 50 + backendM4Wave[i] * 2 : 50,
-      })).slice(-60));
-    } else {
+      const lh = clamp(50 + backendM3Wave[backendM3Wave.length - 1] * 2, 5, 95);
+      const rh = clamp(50 + (backendM4Wave[backendM4Wave.length - 1] ?? 0) * 2, 5, 95);
       setWaveData2(prev => {
-        const next = [...prev];
-        const t = prev.length;
-        next.push({
-          time: t,
-          leftHand: 60 + 25 * Math.sin(t * 0.25) + Math.random() * 8,
-          rightHand: 58 + 27 * Math.sin(t * 0.22 + 0.5) + Math.random() * 7,
-        });
+        const next = [...prev, { time: tickRef.current, leftHand: lh, rightHand: rh }];
         if (next.length > 60) next.shift();
         return next;
       });
     }
-  }, [backendM3Wave, backendM4Wave]);
+  }, [backendM3Wave?.length]);
+
+  // Fallback mock mechanical
+  useEffect(() => {
+    if (!backendM3Wave || backendM3Wave.length === 0) {
+      const interval = setInterval(() => {
+        const t = tickRef.current;
+        setWaveData2(prev => {
+          const next = [...prev, {
+            time: t,
+            leftHand: clamp(60 + 25 * Math.sin(t * 0.25) + Math.random() * 8, 5, 95),
+            rightHand: clamp(58 + 27 * Math.sin(t * 0.22 + 0.5) + Math.random() * 7, 5, 95),
+          }];
+          if (next.length > 60) next.shift();
+          return next;
+        });
+      }, 100);
+      return () => clearInterval(interval);
+    }
+  }, [!!backendM3Wave?.length]);
 
   useEffect(() => {
     if (backendVitals && backendVitals.heartRate > 0) {
@@ -96,11 +126,11 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
     <div className="flex flex-col gap-4 h-full">
 
       {/* Dual Oscilloscope Row */}
-      <div className="bg-[#16161A] rounded-2xl border border-[#1E1E22] p-5 flex-shrink-0" style={{ height: '42%' }}>
+      <div className="bg-[#16161A] rounded-2xl border border-[#1E1E22] p-5 flex-shrink-0 overflow-hidden" style={{ height: '42%', minHeight: 200 }}>
         <div className="grid grid-cols-2 gap-4 h-full">
 
           {/* Subplot A: rPPG */}
-          <div className="flex flex-col">
+          <div className="flex flex-col overflow-hidden">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-[#30D158]" style={{ animation: 'pulse 1.5s ease-in-out infinite' }} />

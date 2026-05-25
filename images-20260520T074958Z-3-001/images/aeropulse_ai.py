@@ -780,15 +780,23 @@ class CameraGrabber(Thread):
         self._frame_count = 0
 
     def _configure_camera(self, cap):
-        """Use default camera settings — do NOT alter exposure, white balance, or gain.
-        Changing these affects ALL applications on Windows at the driver level."""
+        """Use default camera exposure/WB/gain — do NOT alter those.
+        Only set resolution to the best available for face mesh tracking."""
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-        # Let the camera use its native auto-exposure, auto-white-balance, and auto-gain
-        # (default settings). Do not call cap.set() for exposure, gain, or white balance
-        # as those persist globally on Windows and ruin other applications.
+        # Request best resolution for face mesh (720p). This does NOT affect
+        # auto-exposure, auto-white-balance, or auto-gain — only frame size.
+        for w_h in [(1280, 720), (960, 540), (800, 600), (640, 480)]:
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, w_h[0])
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, w_h[1])
+            for _ in range(5):
+                cap.read()
+            actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if actual_w >= w_h[0] * 0.9 and actual_h >= w_h[1] * 0.9:
+                break
 
-        # Give the auto-exposure a moment to settle
+        # Let auto-exposure settle
         for _ in range(30):
             cap.read()
 
@@ -3298,10 +3306,66 @@ class MainWindow(QMainWindow):
 
 
 # =====================================================================
+# HEADLESS BACKEND (no GUI window)
+# =====================================================================
+class HeadlessBackend:
+    """Runs camera, DSP, and WebSocket server without any GUI window."""
+
+    def __init__(self):
+        self.hub = SharedState()
+        self.raw_queue = queue.Queue(maxsize=2)
+        self.processed_queue = queue.Queue(maxsize=2)
+
+        self.cam_grabber = CameraGrabber(self.raw_queue, self.hub)
+        self.dsp_engine = DSPEngine(self.raw_queue, self.processed_queue, self.hub)
+        self.vex_serial = VEXSerialParser(self.hub)
+
+        self.cam_grabber.start()
+        self.dsp_engine.start()
+        self.vex_serial.start()
+
+        def _noop(*a, **k): pass
+        class _NoopSignal:
+            emit = staticmethod(_noop)
+            connect = staticmethod(_noop)
+
+        ws_kwargs = {
+            "sig_set_answers": _NoopSignal(),
+            "sig_pan_tilt": _NoopSignal(),
+            "sig_exec_scan": _NoopSignal(),
+            "sig_set_mode": _NoopSignal(),
+            "sig_gen_pdf": _NoopSignal(),
+        }
+        self.ws_thread = WSThread(self.hub, **ws_kwargs)
+        self.ws_thread.start()
+
+        logging.info("Headless backend started on ws://localhost:8765")
+        logging.info("Press Ctrl+C to stop.")
+
+    def stop(self):
+        self.cam_grabber.running = False
+        self.dsp_engine.running = False
+        self.vex_serial.running = False
+
+    def run_forever(self):
+        try:
+            import signal as sigmod
+            sigmod.signal(sigmod.SIGINT, lambda s, f: sys.exit(0))
+            while True:
+                time.sleep(1.0)
+        except (KeyboardInterrupt, SystemExit):
+            self.stop()
+
+
+# =====================================================================
 # ENTRY POINT
 # =====================================================================
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    win = MainWindow()
-    win.show()
-    sys.exit(app.exec())
+    if "--headless" in sys.argv:
+        backend = HeadlessBackend()
+        backend.run_forever()
+    else:
+        app = QApplication(sys.argv)
+        win = MainWindow()
+        win.show()
+        sys.exit(app.exec())
