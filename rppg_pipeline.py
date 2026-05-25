@@ -51,7 +51,12 @@ SNR_PERCENTILE = 95         # Top 5th percentile SNR selection
 SMOOTH_WINDOW = 5           # Temporal smoothing window for peak powers
 MIN_FRAMERATE = 19.9        # Minimum acceptable FPS (paper §Data cleaning)
 MIN_DURATION = 10.0         # Minimum video duration (seconds) for TFA
+RECOMMENDED_DURATION = 25.0 # Recommended minimum recording duration (paper: 25s)
+HR_MIN = 50.0               # Valid HR lower bound (paper §Data cleaning: 50-120 BPM)
+HR_MAX = 120.0              # Valid HR upper bound (paper §Data cleaning: 50-120 BPM)
 FACE_MIN_SIZE = (60, 60)    # Min face size for cascade detector
+HR_BOOTSTRAP_MIN = 40.0     # Minimum HR before bootstrap
+HR_BOOTSTRAP_MAX = 200.0    # Maximum HR before bootstrap
 
 # Face cascade path (OpenCV built-in)
 _CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
@@ -77,7 +82,209 @@ class rPPGResult:
 
     @property
     def valid(self) -> bool:
-        return self.face_found and 20.0 < self.hr_bpm < 250.0
+        return (self.face_found and HR_MIN <= self.hr_bpm <= HR_MAX
+                and self.framerate >= MIN_FRAMERATE)
+
+    @property
+    def paper_data_quality(self) -> str:
+        """Quality label based on Di Lernia et al. (2024) data-cleaning criteria."""
+        if not self.face_found:
+            return "FAIL: No face detected"
+        if self.framerate < MIN_FRAMERATE:
+            return f"FAIL: FPS {self.framerate:.1f} < {MIN_FRAMERATE:.1f}"
+        if self.duration_s < RECOMMENDED_DURATION:
+            return f"LOW: Duration {self.duration_s:.0f}s < {RECOMMENDED_DURATION:.0f}s recommended"
+        if not (HR_MIN <= self.hr_bpm <= HR_MAX):
+            return f"FAIL: HR {self.hr_bpm:.0f} outside {HR_MIN:.0f}-{HR_MAX:.0f} BPM range"
+        return "PASS"
+
+
+@dataclass
+class RecordingQualityReport:
+    """Quality assessment of a recording based on Di Lernia et al. (2024) criteria.
+
+    All recommendations are *output* as text — never applied to camera hardware.
+    """
+    video_path: str
+    face_detected: bool
+    framerate: float
+    duration_s: float
+    hr_bpm: float
+    snr_quality: float
+    lighting_mean: Optional[float] = None
+    motion_score: Optional[float] = None
+    hr_in_range: bool = False
+
+    @property
+    def framerate_ok(self) -> bool:
+        return self.framerate >= MIN_FRAMERATE
+
+    @property
+    def duration_ok(self) -> bool:
+        return self.duration_s >= RECOMMENDED_DURATION
+
+    @property
+    def overall_score(self) -> float:
+        """Quality score 0-1 from article criteria."""
+        scores = [
+            0.30 * (1.0 if self.framerate_ok else max(0.0, self.framerate / MIN_FRAMERATE * 0.5)),
+            0.20 * (1.0 if self.duration_ok else min(1.0, self.duration_s / RECOMMENDED_DURATION)),
+            0.20 * (1.0 if self.face_detected else 0.0),
+            0.15 * (1.0 if self.hr_in_range else 0.0),
+            0.15 * self.snr_quality,
+        ]
+        return float(np.clip(sum(scores), 0.0, 1.0))
+
+    @property
+    def recommendations(self) -> list[str]:
+        """Output-only recommendations - never changes camera hardware."""
+        recs = []
+        if not self.face_detected:
+            recs.append("Face not detected: Ensure face is visible, well-lit, and centered")
+        if not self.framerate_ok:
+            recs.append(f"Low framerate ({self.framerate:.1f} FPS): "
+                        f"Minimum {MIN_FRAMERATE:.0f} FPS required. Use a webcam 30+ FPS, "
+                        f"close other apps, reduce resolution in camera settings")
+        if not self.duration_ok:
+            recs.append(f"Short recording ({self.duration_s:.0f}s): "
+                        f"Record {RECOMMENDED_DURATION:.0f}+ seconds per the paper protocol")
+        if not self.hr_in_range and self.hr_bpm > 0:
+            recs.append(f"HR {self.hr_bpm:.0f} BPM outside {HR_MIN:.0f}-{HR_MAX:.0f} range: "
+                        f"Rest between recordings, ensure steady state")
+        if self.lighting_mean is not None and self.lighting_mean < 35:
+            recs.append("Dark image: Use natural daylight or a ring light; "
+                        "avoid relying on screen glow")
+        if self.lighting_mean is not None and self.lighting_mean > 225:
+            recs.append("Overexposed: Reduce light intensity, avoid direct light on face")
+        if self.lighting_mean is not None and 100 < self.lighting_mean < 200:
+            pass  # good lighting
+        if self.snr_quality < 0.3 and self.face_detected:
+            recs.append("Low SNR: Sit still, avoid talking, steady breathing, "
+                        "ensure face fills ~30% of frame")
+        if not recs:
+            recs.append("Recording quality PASS - all article criteria met")
+        return recs
+
+    def summary(self) -> str:
+        """One-line summary for logging/display."""
+        return (f"[QUALITY] score={self.overall_score:.2f} "
+                f"FPS={self.framerate:.1f}/{MIN_FRAMERATE:.0f} "
+                f"dur={self.duration_s:.0f}s/{RECOMMENDED_DURATION:.0f}s "
+                f"face={self.face_detected} "
+                f"HR={self.hr_bpm:.0f}/{HR_MIN:.0f}-{HR_MAX:.0f} "
+                f"SNR={self.snr_quality:.2f}")
+
+
+# ===================================================================
+# BEST-PRACTICES GUIDE (output-only, never changes camera)
+# ===================================================================
+BEST_PRACTICES_GUIDE = """
+rPPG Best Practices - Di Lernia et al. (2024)
+==============================================
+These are OUTPUT recommendations. Camera settings are NEVER changed.
+
+[1] LIGHTING (most important)
+    - Natural daylight or steady ring light
+    - Even diffuse illumination across the face
+    - NO shadows on face
+    - NO screen glow as primary light source
+
+[2] POSITIONING
+    - Face the camera directly
+    - Sit close enough that face fills ~30% of frame
+    - Keep head still (motion destroys the 1-2% pulse signal)
+    - Align face in center of frame
+
+[3] AVOID
+    - Masks, hair covering face, touching face
+    - Rapid breathing or talking during recording
+    - Flickering light sources (CRT monitors, unshielded LEDs)
+
+[4] RECORDING REQUIREMENTS
+    - Minimum 20 FPS (30+ recommended)
+    - Minimum 25 seconds duration (45s ideal)
+    - Multiple recordings averaged per session (r=0.58 -> r=0.75)
+
+[5] DATA CLEANING (paper Data cleaning)
+    - Discard: FPS < 20, face not detected
+    - Discard: HR < 50 or > 120 BPM
+    - Discard: IQR outliers
+    - Valid HR range: 50-120 BPM
+"""
+
+
+def best_practices_text() -> str:
+    """Return the best-practices guide for display."""
+    return BEST_PRACTICES_GUIDE
+
+
+def assess_recording_quality(
+    video_path: str | Path,
+    result: rPPGResult,
+    lighting_mean: float | None = None,
+    motion_score: float | None = None,
+) -> RecordingQualityReport:
+    """Assess recording quality against Di Lernia et al. (2024) criteria.
+    
+    Generates recommendations as OUTPUT — never modifies camera settings.
+    """
+    return RecordingQualityReport(
+        video_path=str(video_path),
+        face_detected=result.face_found,
+        framerate=result.framerate,
+        duration_s=result.duration_s,
+        hr_bpm=result.hr_bpm,
+        snr_quality=float(np.mean(result.snr_matrix)) if result.snr_matrix is not None else 0.0,
+        lighting_mean=lighting_mean,
+        motion_score=motion_score,
+        hr_in_range=HR_MIN <= result.hr_bpm <= HR_MAX if result.hr_bpm > 0 else False,
+    )
+
+
+def aggregate_session(
+    results: list[rPPGResult],
+    min_quality_score: float = 0.0,
+    use_iqr: bool = True,
+) -> dict:
+    """Aggregate multiple recordings per session with IQR outlier filtering.
+    
+    Di Lernia et al. §Study 2: averaging multiple recordings per session
+    improves correlation from r=0.578 to r=0.752.
+    
+    Also applies the paper's data-cleaning criteria:
+    - Removes HR < 50 or > 120 BPM
+    - Removes FPS < 20
+    - Removes IQR outliers
+    """
+    valid_results = [r for r in results if r.valid]
+    if len(valid_results) < 1:
+        return {"mean_hr": 0.0, "median_hr": 0.0, "n_valid": 0, "n_total": len(results)}
+
+    hrs = np.array([r.hr_bpm for r in valid_results], dtype=np.float64)
+
+    # IQR outlier removal (paper: 'used the r boxplot function to detect
+    # and remove outliers, defined as values outside the interquartile range')
+    if use_iqr and len(hrs) >= 4:
+        q1, q3 = np.percentile(hrs, [25, 75])
+        iqr = q3 - q1
+        lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+        filtered = hrs[(hrs >= lower) & (hrs <= upper)]
+    else:
+        filtered = hrs
+
+    if len(filtered) < 1:
+        return {"mean_hr": 0.0, "median_hr": 0.0, "n_valid": 0, "n_total": len(results)}
+
+    return {
+        "mean_hr": float(np.mean(filtered)),
+        "median_hr": float(np.median(filtered)),
+        "std_hr": float(np.std(filtered)) if len(filtered) > 1 else 0.0,
+        "n_valid": int(len(filtered)),
+        "n_total": int(len(valid_results)),
+        "n_removed_iqr": int(len(hrs) - len(filtered)),
+        "hrs_raw": hrs.tolist(),
+        "hrs_filtered": filtered.tolist(),
+    }
 
 
 # ===================================================================
@@ -552,7 +759,7 @@ def extract_rppg_from_video(video_path: str | Path,
     rgb = np.column_stack(rgb_frames)  # (3, n)
     n_frames = rgb.shape[1]
 
-    # Check estimated framerate
+    # Check estimated framerate (paper: ≥20 FPS)
     estimated_fs = orig_fps
     if len(timestamps) > 1:
         dts = np.diff(timestamps)
@@ -637,12 +844,13 @@ def extract_rppg_batch(video_paths: list[str | Path],
     return results
 
 
-def average_session_results(results: list[rPPGResult]) -> float:
-    """Average HR across multiple recordings per session (paper: §Study 2 accuracy)."""
-    valid = [r.hr_bpm for r in results if r.valid]
-    if not valid:
-        return 0.0
-    return float(np.mean(valid))
+def average_session_results(results: list[rPPGResult], use_iqr: bool = True) -> float:
+    """Average HR across multiple recordings per session (paper: §Study 2 accuracy).
+    
+    Uses aggregate_session with IQR outlier filtering.
+    """
+    agg = aggregate_session(results, use_iqr=use_iqr)
+    return agg["mean_hr"]
 
 
 # ===================================================================
@@ -707,7 +915,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="rPPG Pipeline — Di Lernia et al. (2024) implementation"
     )
-    parser.add_argument("videos", nargs="+", help="Path(s) to video file(s)")
+    parser.add_argument("videos", nargs="*", help="Path(s) to video file(s)")
     parser.add_argument("--target-fs", type=float, default=TARGET_FS,
                         help=f"Target resample rate (default: {TARGET_FS} Hz)")
     parser.add_argument("--min-duration", type=float, default=MIN_DURATION,
@@ -716,17 +924,37 @@ def main():
                         help="Output as JSON")
     parser.add_argument("--ground-truth", nargs="*", type=float,
                         help="Ground truth HR values (one per video, for accuracy metrics)")
+    parser.add_argument("--quality", action="store_true",
+                        help="Show quality assessment report")
+    parser.add_argument("--guide", action="store_true",
+                        help="Show best-practices guide (output recommendations)")
+    parser.add_argument("--aggregate", action="store_true",
+                        help="Aggregate session results with IQR filtering")
 
     args = parser.parse_args()
+
+    if args.guide:
+        print(best_practices_text())
+        return
 
     results = extract_rppg_batch(args.videos,
                                   target_fs=args.target_fs,
                                   min_duration=args.min_duration)
 
+    if args.aggregate and len(results) > 1:
+        agg = aggregate_session(results)
+        print(f"Session aggregation ({agg['n_valid']} valid / {agg['n_total']} total):")
+        print(f"  Mean HR:  {agg['mean_hr']:.2f} BPM")
+        print(f"  Median HR: {agg['median_hr']:.2f} BPM")
+        print(f"  Std HR:   {agg['std_hr']:.2f} BPM")
+        if agg['n_removed_iqr'] > 0:
+            print(f"  IQR outliers removed: {agg['n_removed_iqr']}")
+        return
+
     if args.json:
         output = []
         for vp, res in zip(args.videos, results):
-            output.append({
+            entry = {
                 "video": str(vp),
                 "hr_bpm": round(res.hr_bpm, 2),
                 "valid": res.valid,
@@ -734,7 +962,13 @@ def main():
                 "framerate": round(res.framerate, 2),
                 "duration_s": round(res.duration_s, 2),
                 "n_frames": res.n_frames,
-            })
+                "data_quality": res.paper_data_quality,
+            }
+            if args.quality:
+                report = assess_recording_quality(vp, res)
+                entry["quality_score"] = round(report.overall_score, 3)
+                entry["recommendations"] = report.recommendations
+            output.append(entry)
         if args.ground_truth and len(args.ground_truth) == len(results):
             est = np.array([r.hr_bpm for r in results])
             gt = np.array(args.ground_truth)
@@ -743,11 +977,21 @@ def main():
                                                 for k, v in metrics.items()}})
         print(json.dumps(output, indent=2))
     else:
-        print(f"{'Video':<50} {'HR(BPM)':<10} {'Face':<6} {'FPS':<8} {'Dur(s)':<8} {'Frames':<8}")
-        print("-" * 90)
+        print(f"{'Video':<50} {'HR(BPM)':<10} {'Quality':<14} {'Face':<6} {'FPS':<8} {'Dur(s)':<8} {'Frames':<8}")
+        print("-" * 104)
         for vp, res in zip(args.videos, results):
             name = str(Path(vp).name)[:48]
-            print(f"{name:<50} {res.hr_bpm:<10.2f} {str(res.face_found):<6} {res.framerate:<8.2f} {res.duration_s:<8.2f} {res.n_frames:<8}")
+            qual = res.paper_data_quality[:12]
+            print(f"{name:<50} {res.hr_bpm:<10.2f} {qual:<14} {str(res.face_found):<6} {res.framerate:<8.2f} {res.duration_s:<8.2f} {res.n_frames:<8}")
+
+        if args.quality:
+            print("\n--- Quality Assessment ---")
+            for vp, res in zip(args.videos, results):
+                report = assess_recording_quality(vp, res)
+                print(f"\n{Path(vp).name}:")
+                print(f"  Score: {report.overall_score:.3f}")
+                for r in report.recommendations:
+                    print(f"  → {r}")
 
         if args.ground_truth and len(args.ground_truth) == len(results):
             est = np.array([r.hr_bpm for r in results])

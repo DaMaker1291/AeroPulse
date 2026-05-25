@@ -1368,12 +1368,30 @@ class DSPEngine(Thread):
 
     def run(self):
         self.hub.add_log("DSP Engine online — ellipse HUD + 4 pipelines initialized.")
-        self.hub.add_log("[rPPG Guidance] For best accuracy per Di Lernia et al. (2024): "
-                         "1) Steady ring light or daylight at >20 FPS. "
-                         "2) Face camera, close, no shadows/masks. "
-                         "3) Keep head still — motion destroys the 1-2% pulse signal. "
-                         "4) 10+ second recordings yield best Lomb-Scargle TFA results. "
-                         "5) Multiple short recordings averaged improve accuracy (r=0.58 → r=0.75).")
+        self.hub.add_log(
+            "[rPPG Best Practices — Di Lernia et al. (2024)] "
+            "OUTPUT RECOMMENDATIONS (camera settings unchanged):"
+        )
+        self.hub.add_log(
+            "  1) LIGHTING: Use natural daylight or a steady ring light. "
+            "Even, diffuse illumination — NO shadows on face, NO screen glow alone"
+        )
+        self.hub.add_log(
+            "  2) POSITION: Face the camera directly, fill ~30% of frame. "
+            "Keep head completely still — motion destroys the 1-2% pulse signal"
+        )
+        self.hub.add_log(
+            "  3) AVOID: Masks, hair over face, touching face. "
+            "No flickering lights (CRT/unshielded LEDs corrupt Lomb-Scargle)"
+        )
+        self.hub.add_log(
+            "  4) RECORD: ≥25 seconds at ≥20 FPS (45s ideal). "
+            "Multiple recordings per session averaged → r=0.58→r=0.75 accuracy"
+        )
+        self.hub.add_log(
+            "  5) VALIDATION: Only HR 50-120 BPM accepted. "
+            "IQR outliers auto-removed. Camera is NEVER reconfigured"
+        )
         while self.running:
             try:
                 frame_bgr = self.raw_queue.get(timeout=1.0)
@@ -2030,6 +2048,39 @@ class DSPEngine(Thread):
                     f"[TremorAlert] 8-12Hz pathological ratio={tremor_power_ratio:.3f}, "
                     f"spectral peak at {tremor_peak_hz:.2f} Hz."
                 )
+
+            # ── Periodic Quality Report (every ~30s) ──
+            if self._log_counter == 0 and ellipse_locked:
+                fs_now = self._estimate_fs()
+                dur_s = len(self.green_buffer) / max(fs_now, 0.1) if fs_now > 0 else 0
+                hr_now = self.hub.get_hr()
+                hr_ok = 50.0 <= hr_now <= 120.0 if hr_now > 0 else False
+                q = self.hub.get_quality()
+                lq = self.hub.get_lighting_quality()
+                lw = self.hub.get_lighting_warning()
+
+                issues = []
+                if fs_now < 20:
+                    issues.append(f"FPS {fs_now:.0f} < 20 → close other apps, reduce resolution")
+                if dur_s < 25:
+                    issues.append(f"Recording {dur_s:.0f}s < 25s recommended")
+                if not hr_ok and hr_now > 0:
+                    issues.append(f"HR {hr_now:.0f} outside 50-120 BPM validation range")
+                if q < 0.25:
+                    issues.append(f"rPPG SNR low ({q:.2f}) → sit still, steady breathing")
+                if lq < 0.5 and lw:
+                    issues.append(f"Lighting: {lw}")
+
+                if issues:
+                    self.hub.add_log("[Quality Report — Output Recommendations (camera unchanged)]")
+                    for iss in issues:
+                        self.hub.add_log(f"  → {iss}")
+                else:
+                    self.hub.add_log(
+                        f"[Quality Report] All article criteria met: "
+                        f"FPS={fs_now:.0f} Dur={dur_s:.0f}s HR={hr_now:.0f}BPM "
+                        f"SNR={q:.2f} Light={lq:.2f}"
+                    )
 
         return out
 
