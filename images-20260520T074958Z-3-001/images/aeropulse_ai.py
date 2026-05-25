@@ -20,6 +20,7 @@ from scipy import interpolate as scipy_interpolate
 import cv2
 import mediapipe as mp
 import websockets
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Face mesh edges (478-point MediaPipe FaceLandmarker, hardcoded for compatibility)
 # Face oval + brows + nose + eyes + lips — all indices < 478, validated safe
@@ -659,6 +660,7 @@ class SharedState:
         self.ellipse_aligned = False
         self.is_processing = False
         self.exposure_timer = 0.0
+        self._latest_frame_jpeg = None
         self.unlocked_stages = {1: True, 2: False, 3: False, 4: False, 5: False}
         self.stage3_handshaked = False
         self.endurance_active = False
@@ -764,6 +766,10 @@ class SharedState:
         with self.lock: return self.lighting_warning
     def set_lighting_warning(self, w):
         with self.lock: self.lighting_warning = str(w)
+    def set_latest_frame_jpeg(self, jpeg_bytes):
+        with self.lock: self._latest_frame_jpeg = jpeg_bytes
+    def get_latest_frame_jpeg(self):
+        with self.lock: return self._latest_frame_jpeg
 
 # =====================================================================
 # THREAD 1: ASYNCHRONOUS CAMERA GRABBER
@@ -2090,6 +2096,9 @@ class DSPEngine(Thread):
                         f"SNR={q:.2f} Light={lq:.2f}"
                     )
 
+        if out is not None:
+            _, jpeg = cv2.imencode('.jpg', out, [cv2.IMWRITE_JPEG_QUALITY, 65])
+            self.hub.set_latest_frame_jpeg(jpeg.tobytes())
         return out
 
 # =====================================================================
@@ -2349,6 +2358,7 @@ class MainWindow(QMainWindow):
         self.cam_grabber.start()
         self.dsp_engine.start()
         self.vex_serial.start()
+        start_mjpeg_server(self.hub)
 
         # Ollama consultant
         self.ollama = OllamaConsultant(self.hub)
@@ -3306,6 +3316,46 @@ class MainWindow(QMainWindow):
 
 
 # =====================================================================
+# MJPEG HTTP STREAM SERVER
+# =====================================================================
+class MJPEGHTTPHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/stream":
+            boundary = "FRAMEBOUNDARY"
+            self.send_response(200)
+            self.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={boundary}")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            hub = getattr(self.server, "hub", None)
+            if hub is None:
+                return
+            try:
+                while True:
+                    jpeg = hub.get_latest_frame_jpeg()
+                    if jpeg:
+                        self.wfile.write(f"--{boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(jpeg)}\r\n\r\n".encode())
+                        self.wfile.write(jpeg)
+                        self.wfile.write(b"\r\n")
+                    time.sleep(0.03)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+        else:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<html><body><img src='/stream'/></body></html>")
+    def log_message(self, *a, **k): pass
+
+def start_mjpeg_server(hub: SharedState, host="0.0.0.0", port=8766):
+    server = ThreadingHTTPServer((host, port), MJPEGHTTPHandler)
+    server.hub = hub
+    t = Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    logging.info(f"MJPEG stream at http://{host}:{port}/stream")
+    return server
+
+# =====================================================================
 # HEADLESS BACKEND (no GUI window)
 # =====================================================================
 class HeadlessBackend:
@@ -3339,7 +3389,9 @@ class HeadlessBackend:
         self.ws_thread = WSThread(self.hub, **ws_kwargs)
         self.ws_thread.start()
 
-        logging.info("Headless backend started on ws://localhost:8765")
+        start_mjpeg_server(self.hub)
+
+        logging.info("Headless backend started on ws://localhost:8765, stream at http://localhost:8766/stream")
         logging.info("Press Ctrl+C to stop.")
 
     def stop(self):

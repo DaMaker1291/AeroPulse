@@ -5,6 +5,7 @@ import { Brain, ChevronRight } from 'lucide-react';
 interface Page1Props {
   onUnlockNavigation: () => void;
   targetStatus?: 'locked' | 'acquiring' | 'standby';
+  streamUrl?: string;
 }
 
 const questions = [
@@ -22,6 +23,7 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
   const [tiltValue, setTiltValue] = useState(50);
   const [aiConfidence, setAiConfidence] = useState(0.74);
   const [scanAngle, setScanAngle] = useState(0);
+  const [streamError, setStreamError] = useState(false);
 
   useEffect(() => {
     const rotInterval = setInterval(() => {
@@ -177,6 +179,16 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
 
         {/* Viewport */}
         <div className="flex-1 mx-5 mt-4 mb-4 bg-[#0B0B0D] rounded-xl relative overflow-hidden border border-[#1E1E22]">
+          {/* Live camera feed */}
+          {streamUrl && !streamError && (
+            <img
+              src={streamUrl}
+              alt="Camera feed"
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ filter: 'brightness(0.9) contrast(1.05)' }}
+              onError={() => setStreamError(true)}
+            />
+          )}
           {/* Gradient atmosphere */}
           <div className="absolute inset-0 bg-gradient-to-br from-[#0A84FF]/5 via-transparent to-[#30D158]/3" />
 

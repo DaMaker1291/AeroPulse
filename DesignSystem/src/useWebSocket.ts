@@ -30,6 +30,7 @@ export interface BackendState {
   triage: TriageData;
   fft: FftData;
   connected: boolean;
+  streamUrl: string;
 }
 
 const INITIAL: BackendState = {
@@ -43,6 +44,7 @@ const INITIAL: BackendState = {
   triage: { bilateralSymmetry: 0, neuromuscularLag: 0, vascularCompliance: 0, tremorPeakHz: 0 },
   fft: { freqs: [], power: [] },
   connected: false,
+  streamUrl: 'http://localhost:8766/stream',
 };
 
 export function useWebSocket(url = 'ws://localhost:8765') {

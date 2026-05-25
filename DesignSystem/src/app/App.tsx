@@ -231,6 +231,7 @@ export default function App() {
                   <Page1AdaptiveIntake
                     onUnlockNavigation={handleUnlockNavigation}
                     targetStatus={backend.targetStatus}
+                    streamUrl={backend.streamUrl}
                   />
                 )}
                 {currentPage === 'biometric' && (
