@@ -266,5 +266,3 @@ export const FACE_MESH_CONNECTIONS: number[][] = [
   [474, 475, 476, 477],
   [469, 470, 471, 472],
 ];
-
-// v3
