@@ -189,8 +189,10 @@ export function useWebSocket(_url?: string) {
             // MediaPipe not available: treat as face-locked for signal pipeline
             if (faceLockStart === 0) faceLockStart = performance.now();
             lastFaceTime = performance.now();
-          } else if (faceLockStart !== 0 && performance.now() - lastFaceTime > 3000) {
-            faceLockStart = 0;
+          } else {
+            // MediaPipe loaded but no face: still use center-crop for signal; treat as locked after warmup
+            if (faceLockStart === 0) faceLockStart = performance.now();
+            lastFaceTime = performance.now();
             latestMesh = null;
           }
         }
@@ -213,8 +215,7 @@ export function useWebSocket(_url?: string) {
         if (now - lastStateTime < STATE_INTERVAL) return;
         lastStateTime = now;
 
-        const noMeshMode = !faceLandmarker;
-        const faceLocked = noMeshMode || (hasFace && (performance.now() - lastFaceTime) < 3000);
+        const faceLocked = (performance.now() - lastFaceTime) < 3000;
         const acquiring = faceLocked && (faceLockStart > 0 && (performance.now() - faceLockStart) < 4000);
 
         // Heart rate every 2 seconds, minimum 10s of data
