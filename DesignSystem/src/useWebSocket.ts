@@ -57,13 +57,13 @@ const INITIAL: BackendState = {
 };
 
 const RPPG_BUF_SECS = 30;
-const WINDOW_SECS = 10;
+const WINDOW_SECS = 6;
 const FFT_FS = 60;
 const STATE_INTERVAL = 80;
 const WAVE_LEN = 60;
-const HR_EMA_ALPHA = 0.3;
-const HR_QUALITY_THRESHOLD = 0.25;
-const HR_STABILITY_REQUIRED = 3;
+const HR_EMA_ALPHA = 0.4;
+const HR_QUALITY_THRESHOLD = 0.2;
+const HR_STABILITY_REQUIRED = 2;
 const HR_MIN_ACCEPTABLE = 50;
 const HR_MAX_ACCEPTABLE = 180;
 const HR_CHANGE_MAX = 12;
@@ -261,7 +261,7 @@ export function useWebSocket(_url?: string) {
         const faceLocked = (performance.now() - lastFaceTime) < 3000;
         const acquiring = faceLocked && (faceLockStart > 0 && (performance.now() - faceLockStart) < 4000);
 
-        // Heart rate every 1 second, minimum 10s of data
+        // Heart rate every 1 second, minimum 6s of data
         const motionScore = motionRmsCount > 0 ? motionRmsAccum / motionRmsCount : 0;
         const motionPaused = motionScore > MOTION_PAUSE_THRESHOLD;
 
