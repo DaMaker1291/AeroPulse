@@ -122,7 +122,7 @@ export function useWebSocket(_url?: string) {
       if (!videoEl || !canvasEl) return;
 
       try {
-        const ctx = canvasEl.getContext('2d');
+        const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
         if (!ctx) return;
         ctx.drawImage(videoEl, 0, 0, PROC_W, PROC_H);
         const imgData = ctx.getImageData(0, 0, PROC_W, PROC_H);
@@ -270,7 +270,7 @@ export function useWebSocket(_url?: string) {
         const microMotionNorm = Math.min(100, Math.max(0, avgMicroMotion * 20));
 
         // Tremor from face centroid FFT
-        const cLen = centroidBufX.length();
+        const cLen = centroidBufX.size;
         let tremorHz = 0;
         if (cLen >= FFT_FS * 2) {
           const cxArr = centroidBufX.toArray();

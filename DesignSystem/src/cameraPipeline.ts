@@ -242,6 +242,7 @@ export class SignalBuffer {
   size: number;
   constructor(size: number) { this.size = size; this.buffer = new Float64Array(size); }
   push(v: number) { this.buffer[this.pos] = v; this.pos = (this.pos + 1) % this.size; }
+  length(): number { return this.size; }
   toArray(): Float64Array {
     const out = new Float64Array(this.size);
     for (let i = 0; i < this.size; i++) out[i] = this.buffer[(this.pos + i) % this.size];
