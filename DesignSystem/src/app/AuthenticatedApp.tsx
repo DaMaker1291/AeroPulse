@@ -9,6 +9,7 @@ import { Page4Enterprise } from './components/Page4Enterprise';
 import { Page5Labvanced } from './components/Page5Labvanced';
 import { Page6Onboarding } from './components/Page6Onboarding';
 import { useWebSocket } from '../useWebSocket';
+import { useIsMobile } from './components/ui/use-mobile';
 
 type PageKey = 'intake' | 'biometric' | 'triage' | 'enterprise' | 'labvanced' | 'onboarding';
 
@@ -39,6 +40,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
   const [patientInfo, setPatientInfo] = useState({ reasonForVisit: '', age: '', gender: '' });
 
   const backend = useWebSocket();
+  const isMobile = useIsMobile();
 
   const handleUnlockNavigation = () => {
     setUnlockedPages(new Set(['intake', 'biometric', 'triage', 'enterprise', 'labvanced', 'onboarding']));
@@ -53,6 +55,126 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
   const navigate = (key: PageKey) => {
     if (unlockedPages.has(key)) setCurrentPage(key);
   };
+
+  const renderContent = () => (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={currentPage}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -8 }}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+        className={isMobile ? '' : 'h-full'}
+      >
+        {currentPage === 'intake' && (
+          <Page1AdaptiveIntake
+            onUnlockNavigation={handleUnlockNavigation}
+            targetStatus={backend.targetStatus}
+            streamUrl={backend.streamUrl}
+            cameraStream={backend.cameraStream}
+            faceMesh={backend.faceMesh}
+            onPatientInfo={setPatientInfo}
+            patientInfo={patientInfo}
+          />
+        )}
+        {currentPage === 'biometric' && (
+          <Page2Biometric
+            onScanComplete={handleScanComplete}
+            backendVitals={backend.vitals}
+            backendRppgWave={backend.rppgWave}
+            backendM3Wave={backend.m3Wave}
+            backendM4Wave={backend.m4Wave}
+            cameraConnected={backend.cameraConnected}
+          />
+        )}
+        {currentPage === 'triage' && (
+          <Page3Triage
+            backendTriage={backend.triage}
+            backendFft={backend.fft}
+            backendVitals={backend.vitals}
+            reasonForVisit={patientInfo.reasonForVisit}
+            patientAge={patientInfo.age}
+            patientGender={patientInfo.gender}
+          />
+        )}
+        {currentPage === 'enterprise' && (
+          <Page4Enterprise
+            backendVitals={backend.vitals}
+            backendRppgWave={backend.rppgWave}
+          />
+        )}
+        {currentPage === 'labvanced' && <Page5Labvanced />}
+        {currentPage === 'onboarding' && <Page6Onboarding />}
+      </motion.div>
+    </AnimatePresence>
+  );
+
+  if (isMobile) {
+    return (
+      <div className="w-screen h-screen bg-[#0B0B0D] flex flex-col overflow-hidden" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+        <Toaster position="top-right" theme="dark" toastOptions={{
+          style: { background: '#16161A', border: '1px solid #2C2C2E', color: '#fff' }
+        }} />
+
+        {/* Mobile Header */}
+        <header className="h-12 bg-[#0B0B0D] border-b border-[#1E1E22] flex items-center justify-between px-4 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-[#0A84FF] flex items-center justify-center">
+              <Activity className="w-3 h-3 text-white" />
+            </div>
+            <span className="text-white font-bold text-[14px] tracking-tight">AeroPulse AI</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="text-right">
+              <div className="text-[11px] text-white font-medium leading-tight">{user?.name}</div>
+              <div className="text-[9px] text-[#8E8E93] leading-tight">{user?.role} · {user?.org}</div>
+            </div>
+            <button onClick={onSignOut} className="ml-1 p-1.5 text-[#8E8E93] hover:text-white transition-colors">
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </header>
+
+        {/* Mobile Content */}
+        <main className="flex-1 overflow-auto bg-[#0D0D10]">
+          <div className="p-3 min-h-full">
+            {renderContent()}
+          </div>
+        </main>
+
+        {/* Mobile Bottom Tab Bar */}
+        <nav className="h-14 bg-[#0B0B0D] border-t border-[#1E1E22] flex items-center justify-around px-1 flex-shrink-0 pb-1">
+          {pages.map(page => {
+            const isActive = currentPage === page.key;
+            const isLocked = !unlockedPages.has(page.key);
+            const isDone = completedPages.has(page.key);
+            const Icon = page.icon;
+            return (
+              <button
+                key={page.key}
+                onClick={() => navigate(page.key)}
+                disabled={isLocked}
+                className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-lg transition-all min-w-0 flex-1 ${
+                  isActive ? 'text-[#0A84FF]' : isLocked ? 'text-[#8E8E93]/30' : 'text-[#8E8E93]'
+                }`}
+              >
+                {isLocked ? (
+                  <Lock className="w-4 h-4" />
+                ) : isDone && !isActive ? (
+                  <svg className="w-4 h-4 text-[#30D158]" viewBox="0 0 12 12" fill="none">
+                    <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  <Icon className="w-4 h-4" />
+                )}
+                <span className="text-[9px] font-medium truncate max-w-full">{page.name}</span>
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+    );
+  }
 
   return (
     <div className="w-screen h-screen bg-[#0B0B0D] flex flex-col overflow-hidden" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -151,12 +273,10 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
                       : 'text-[#8E8E93] hover:bg-[#16161A] hover:text-white'
                   }`}
                 >
-                  {/* Active left border */}
                   {isActive && (
                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[#0A84FF] rounded-r-full" />
                   )}
 
-                  {/* Step number */}
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
                     isActive ? 'bg-[#0A84FF]' :
                     isDone ? 'bg-[#30D158]/15 border border-[#30D158]/25' :
@@ -214,56 +334,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
         {/* Main viewport */}
         <main className="flex-1 flex flex-col overflow-hidden bg-[#0D0D10]">
           <div className="flex-1 p-5 overflow-auto">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={currentPage}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.18, ease: 'easeOut' }}
-                className="h-full"
-              >
-                {currentPage === 'intake' && (
-                  <Page1AdaptiveIntake
-                    onUnlockNavigation={handleUnlockNavigation}
-                    targetStatus={backend.targetStatus}
-                    streamUrl={backend.streamUrl}
-                    cameraStream={backend.cameraStream}
-                    faceMesh={backend.faceMesh}
-                    onPatientInfo={setPatientInfo}
-                    patientInfo={patientInfo}
-                  />
-                )}
-                {currentPage === 'biometric' && (
-                  <Page2Biometric
-                    onScanComplete={handleScanComplete}
-                    backendVitals={backend.vitals}
-                    backendRppgWave={backend.rppgWave}
-                    backendM3Wave={backend.m3Wave}
-                    backendM4Wave={backend.m4Wave}
-                    cameraConnected={backend.cameraConnected}
-                  />
-                )}
-                {currentPage === 'triage' && (
-                  <Page3Triage
-                    backendTriage={backend.triage}
-                    backendFft={backend.fft}
-                    backendVitals={backend.vitals}
-                    reasonForVisit={patientInfo.reasonForVisit}
-                    patientAge={patientInfo.age}
-                    patientGender={patientInfo.gender}
-                  />
-                )}
-                {currentPage === 'enterprise' && (
-                  <Page4Enterprise
-                    backendVitals={backend.vitals}
-                    backendRppgWave={backend.rppgWave}
-                  />
-                )}
-                {currentPage === 'labvanced' && <Page5Labvanced />}
-                {currentPage === 'onboarding' && <Page6Onboarding />}
-              </motion.div>
-            </AnimatePresence>
+            {renderContent()}
           </div>
         </main>
       </div>
