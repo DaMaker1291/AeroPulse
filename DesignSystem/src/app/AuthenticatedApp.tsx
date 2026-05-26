@@ -35,7 +35,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
   const [unlockedPages, setUnlockedPages] = useState<Set<PageKey>>(new Set(['intake', 'labvanced']));
   const [completedPages, setCompletedPages] = useState<Set<PageKey>>(new Set());
 
-  const { state: backend, faceLandmarksRef } = useWebSocket();
+  const backend = useWebSocket();
 
   const handleUnlockNavigation = () => {
     setUnlockedPages(new Set(['intake', 'biometric', 'triage', 'enterprise', 'labvanced']));
