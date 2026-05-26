@@ -180,7 +180,7 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
     <div className={`${isMobile ? 'flex flex-col gap-3' : 'flex gap-4 h-full'}`}>
 
       {/* AI Clinical Screener */}
-      <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] flex flex-col overflow-hidden ${isMobile ? 'flex-shrink-0' : 'flex-1'}`}>
+      <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] flex flex-col overflow-y-auto ${isMobile ? 'flex-shrink-0' : 'flex-1'}`}>
 
         {/* Card header */}
         <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-[#1E1E22] flex items-center justify-between">
