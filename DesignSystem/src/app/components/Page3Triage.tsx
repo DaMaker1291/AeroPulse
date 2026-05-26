@@ -1,10 +1,11 @@
 import { useMemo, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { FileText, AlertTriangle, CheckCircle2, Activity, Heart, Wind, Droplets, Thermometer, Brain } from 'lucide-react';
+import { FileText, AlertTriangle, CheckCircle2, Activity, Heart, Wind, Droplets, Thermometer, Brain, Globe, ThermometerSun } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { useIsMobile } from './ui/use-mobile';
 import { jsPDF } from 'jspdf';
+import { useEnvironmentalData } from '../../useEnvironmentalData';
 
 interface VitalsData {
   heartRate: number;
@@ -120,6 +121,7 @@ function generateDiagnosis(vitals: VitalsData, triage: TriageData | undefined, r
 export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonForVisit, patientAge, patientGender }: Page3Props) {
   const isMobile = useIsMobile();
   const hasData = backendVitals?.heartRate && backendVitals.heartRate > 0;
+  const env = useEnvironmentalData();
 
   const hasPsdData = backendFft?.freqs?.length && backendFft?.power?.length;
   const psdData = useMemo(() => {
@@ -385,6 +387,74 @@ export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonFo
           </div>
         )}
       </motion.div>
+
+      {/* Planetary Health Environmental Correlation */}
+      {!env.loading && !env.error && env.temp > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.13 }}
+          className="bg-[#16161A] rounded-2xl border border-[#1E1E22] p-3 sm:p-5 flex-shrink-0"
+        >
+          <div className="flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+            <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#30D158]" />
+            <span className="text-[12px] sm:text-[13px] font-semibold text-white">Planetary Health · Environmental Correlation</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-3">
+            <div className="bg-[#0B0B0D] rounded-xl border border-[#1E1E22] p-3">
+              <div className="text-[8px] text-[#8E8E93] tracking-widest uppercase font-medium mb-1">Ambient Temp</div>
+              <div className="flex items-baseline gap-1">
+                <span className={`text-[22px] font-bold font-mono leading-none ${env.temp >= 40 ? 'text-[#FF453A]' : env.temp >= 35 ? 'text-[#FF9F0A]' : 'text-white'}`}>
+                  {env.temp}°C
+                </span>
+                <span className="text-[10px] text-[#8E8E93]">
+                  {env.temp >= 40 ? 'Extreme Heatwave' : env.temp >= 35 ? 'Elevated' : 'Normal'}
+                </span>
+              </div>
+            </div>
+            <div className="bg-[#0B0B0D] rounded-xl border border-[#1E1E22] p-3">
+              <div className="text-[8px] text-[#8E8E93] tracking-widest uppercase font-medium mb-1">AQI</div>
+              <div className="flex items-baseline gap-1">
+                <span className={`text-[22px] font-bold font-mono leading-none ${env.aqi >= 100 ? 'text-[#FF453A]' : env.aqi >= 50 ? 'text-[#FF9F0A]' : 'text-white'}`}>
+                  {env.aqi > 0 ? env.aqi : '—'}
+                </span>
+                <span className="text-[10px] text-[#8E8E93]">
+                  {env.aqi >= 150 ? 'Unhealthy' : env.aqi >= 100 ? 'Unhealthy for Sensitive' : env.aqi >= 50 ? 'Moderate' : 'Good'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-[#0B0B0D] rounded-xl border border-[#1E1E22] p-3 sm:p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <ThermometerSun className="w-3.5 h-3.5 text-[#FF9F0A]" />
+              <span className="text-[10px] font-semibold text-white">Environmental Correlation Analysis</span>
+            </div>
+            <p className="text-[11px] sm:text-[12px] text-[#AEAEB2] leading-relaxed">
+              {env.temp >= 38
+                ? `Local ambient temperature of ${env.temp}°C indicates extreme thermal stress. `
+                : env.temp >= 32
+                ? `Local ambient temperature of ${env.temp}°C above typical comfort range. `
+                : `Local ambient temperature of ${env.temp}°C within typical range. `}
+              {env.aqi >= 100
+                ? `Elevated AQI (${env.aqi}) suggests particulate exposure that may amplify cardiovascular and respiratory strain.`
+                : env.aqi >= 50
+                ? `Moderate AQI (${env.aqi}) — standard precautions recommended for sensitive individuals.`
+                : 'Air quality within healthy thresholds.'}
+              {hasData && backendVitals?.heartRate > 0 && env.temp >= 35 && (
+                ` Cardiovascular stress may be amplified by environmental thermal load (HR ${Math.round(backendVitals.heartRate)} BPM at ${env.temp}°C ambient).`
+              )}
+            </p>
+          </div>
+
+          {env.pm25 > 0 && (
+            <div className="mt-2 text-[9px] text-[#8E8E93]/60 font-mono">
+              PM2.5: {env.pm25.toFixed(1)} µg/m³ · Location: {env.location}
+            </div>
+          )}
+        </motion.div>
+      )}
 
       {/* FFT Power Spectral Density */}
       <motion.div

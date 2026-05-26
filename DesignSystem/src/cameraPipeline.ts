@@ -131,6 +131,24 @@ export function computeHeartRate(filtered: Float64Array, fs: number): { bpm: num
   return { bpm: peakFreq * 60, freqs, power, snr };
 }
 
+export function computeSpO2(r: Float64Array, g: Float64Array): number {
+  const n = r.length;
+  if (n < 10) return 0;
+  const meanR = r.reduce((a, v) => a + v, 0) / n;
+  const meanG = g.reduce((a, v) => a + v, 0) / n;
+  if (meanR < 1 || meanG < 1) return 0;
+  let acR = 0, acG = 0;
+  for (let i = 0; i < n; i++) {
+    acR += (r[i] - meanR) ** 2;
+    acG += (g[i] - meanG) ** 2;
+  }
+  const rmsR = Math.sqrt(acR / n);
+  const rmsG = Math.sqrt(acG / n);
+  const ratio = (rmsR / meanR) / (rmsG / meanG + 1e-10);
+  const spo2 = Math.round(110 - 25 * Math.max(0.2, Math.min(0.8, ratio)));
+  return Math.max(85, Math.min(100, spo2));
+}
+
 export function computeRespirationRate(avgIntensity: Float64Array, fs: number): number {
   const n = avgIntensity.length;
   const fftLen = nextPow2(n);

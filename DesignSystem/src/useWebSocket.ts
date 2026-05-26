@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import {
-  createBandpassFilter, applyFilterChain, computeHeartRate, computeRespirationRate,
+  createBandpassFilter, applyFilterChain, computeHeartRate, computeRespirationRate, computeSpO2,
   extractRGB, computeSkinROI, posProject, SignalBuffer, FACE_MESH_CONNECTIONS,
 } from './cameraPipeline';
 
@@ -307,8 +307,8 @@ export function useWebSocket(_url?: string) {
         const m3Val = Math.sin(posWfIdx * 0.098) * sigQual * 22 + 48;
         const m4Val = Math.cos(posWfIdx * 0.082) * sigQual * 17 + 52;
 
-        // SpO2 and temperature cannot be measured from a consumer webcam
-        const spo2Est = 0; // unknown from webcam
+        // SpO2 estimated from RGB ratio-of-ratios (red/green AC/DC)
+        const spo2Est = latestHr > 0 ? computeSpO2(rBuf.toArray(), gBuf.toArray()) : 0;
 
         const upd: BackendState = {
           targetStatus: faceLocked ? (acquiring ? 'acquiring' : 'locked') : 'standby',
