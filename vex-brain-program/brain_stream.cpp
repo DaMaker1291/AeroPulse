@@ -17,10 +17,14 @@
 
 #include "main.h"
 
-pros::Motor gripLeft(3, pros::E_MOTOR_GEARSET_18, false);
-pros::Motor gripRight(4, pros::E_MOTOR_GEARSET_18, true);
+pros::Motor gripLeft(3);
+pros::Motor gripRight(4);
 
 void initialize() {
+  gripLeft.set_gearing(pros::E_MOTOR_GEARSET_18);
+  gripRight.set_gearing(pros::E_MOTOR_GEARSET_18);
+  gripRight.set_reversed(true);
+
   pros::lcd::initialize();
   pros::lcd::set_text(0, "AeroPulse VEX Bridge");
   pros::lcd::set_text(1, "Streaming 50 Hz");
