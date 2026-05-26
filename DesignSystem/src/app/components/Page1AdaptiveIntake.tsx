@@ -16,7 +16,7 @@ const questions = [
   { id: 4, text: "Have you had difficulty with fine motor tasks like writing or buttoning clothes?", category: "Dexterity" },
 ];
 
-export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTargetStatus }: Page1Props) {
+export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTargetStatus, streamUrl, cameraStream }: Page1Props) {
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
   const [targetStatus, setTargetStatus] = useState<'acquiring' | 'locked' | 'standby'>(propTargetStatus ?? 'standby');
