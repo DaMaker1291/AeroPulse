@@ -19,8 +19,8 @@ const questions = [
 ];
 
 const MESH_COLOR = '#30D158';
-const MESH_LINE_WIDTH = 0.8;
-const MESH_DOT_RADIUS = 1;
+const MESH_LINE_WIDTH = 1.5;
+const MESH_DOT_RADIUS = 2;
 
 export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTargetStatus, streamUrl, cameraStream, faceMesh }: Page1Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -70,7 +70,7 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
         ctx.strokeStyle = MESH_COLOR;
         ctx.lineWidth = MESH_LINE_WIDTH;
         ctx.fillStyle = MESH_COLOR;
-        ctx.globalAlpha = 0.6;
+        ctx.globalAlpha = 0.85;
 
         // Draw connections
         for (const contour of FACE_MESH_CONNECTIONS) {
@@ -86,7 +86,7 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
         }
 
         // Draw landmark dots
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.6;
         for (let i = 0; i < 478; i++) {
           const x = mesh[i * 2] * cw;
           const y = mesh[i * 2 + 1] * ch;

@@ -245,7 +245,12 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
                     backendFft={backend.fft}
                   />
                 )}
-                {currentPage === 'enterprise' && <Page4Enterprise />}
+                {currentPage === 'enterprise' && (
+                  <Page4Enterprise
+                    backendVitals={backend.vitals}
+                    backendRppgWave={backend.rppgWave}
+                  />
+                )}
                 {currentPage === 'labvanced' && <Page5Labvanced />}
               </motion.div>
             </AnimatePresence>

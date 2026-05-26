@@ -210,8 +210,8 @@ export function useWebSocket(_url?: string) {
         const m3Val = Math.sin(posWfIdx * 0.1) * sigQual * 20 + 50;
         const m4Val = Math.cos(posWfIdx * 0.08) * sigQual * 18 + 50;
 
-        // Rough SpO2 from red/green ratio (not medically accurate, signal-dependent)
-        const spo2Est = faceLocked ? Math.round(95 + sigQual * 4) : 0;
+        // SpO2 and temperature cannot be measured from a consumer webcam — always 0 (unknown)
+        const spo2Est = 0;
 
         const upd: BackendState = {
           targetStatus: faceLocked ? (acquiring ? 'acquiring' : 'locked') : 'standby',
@@ -219,9 +219,9 @@ export function useWebSocket(_url?: string) {
           faceTracked: faceLocked,
           vitals: {
             heartRate: latestHr,
-            respiration: latestRespiration || (latestHr > 0 ? 12 + (latestHr % 6) : 0),
+            respiration: latestRespiration,
             bloodOxygen: spo2Est,
-            temperature: faceLocked ? 36.6 + sigQual * 0.3 : 0,
+            temperature: 0,
           },
           rppgWave: rppgWav,
           m3Wave: [m3Val],

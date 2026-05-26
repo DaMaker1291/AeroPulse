@@ -29,7 +29,7 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
   const [scanMode, setScanMode] = useState<'compression' | 'tension'>('tension');
   const [waveData1, setWaveData1] = useState<Array<{ time: number; value: number }>>([]);
   const [waveData2, setWaveData2] = useState<Array<{ time: number; leftHand: number; rightHand: number }>>([]);
-  const [vitals, setVitals] = useState({ heartRate: 74, respiration: 14, bloodOxygen: 98, temperature: 36.8 });
+  const [vitals, setVitals] = useState({ heartRate: 0, respiration: 0, bloodOxygen: 0, temperature: 0 });
   const tickRef = useRef(0);
 
   // Stable rPPG waveform: append new point from backend, maintain fixed window
@@ -45,21 +45,7 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
     }
   }, [backendRppgWave?.length]);
 
-  // Fallback mock when no backend rPPG data
-  useEffect(() => {
-    if (!backendRppgWave || backendRppgWave.length === 0) {
-      const interval = setInterval(() => {
-        tickRef.current += 1;
-        const t = tickRef.current;
-        setWaveData1(prev => {
-          const next = [...prev, { time: t, value: clamp(50 + 30 * Math.sin(t * 0.3) + Math.random() * 5, 5, 95) }];
-          if (next.length > 60) next.shift();
-          return next;
-        });
-      }, 100);
-      return () => clearInterval(interval);
-    }
-  }, [!!backendRppgWave?.length]);
+  // No fallback mock — flat line when no backend data
 
   // Stable mechanical waveform
   useEffect(() => {
@@ -74,24 +60,7 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
     }
   }, [backendM3Wave?.length]);
 
-  // Fallback mock mechanical
-  useEffect(() => {
-    if (!backendM3Wave || backendM3Wave.length === 0) {
-      const interval = setInterval(() => {
-        const t = tickRef.current;
-        setWaveData2(prev => {
-          const next = [...prev, {
-            time: t,
-            leftHand: clamp(60 + 25 * Math.sin(t * 0.25) + Math.random() * 8, 5, 95),
-            rightHand: clamp(58 + 27 * Math.sin(t * 0.22 + 0.5) + Math.random() * 7, 5, 95),
-          }];
-          if (next.length > 60) next.shift();
-          return next;
-        });
-      }, 100);
-      return () => clearInterval(interval);
-    }
-  }, [!!backendM3Wave?.length]);
+  // No fallback mock mechanical — flat line when no backend data
 
   useEffect(() => {
     if (backendVitals && backendVitals.heartRate > 0) {
@@ -116,10 +85,10 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
   }, [scanning, countdown, onScanComplete]);
 
   const vitalCards = [
-    { label: 'Heart Rate', value: Math.round(vitals.heartRate), unit: 'BPM', icon: Heart, color: '#FF453A', status: 'normal' },
-    { label: 'Respiration', value: Math.round(vitals.respiration), unit: 'BR/MIN', icon: Wind, color: '#0A84FF', status: 'normal' },
-    { label: 'Blood O₂', value: Math.round(vitals.bloodOxygen), unit: '% SpO2', icon: Droplets, color: '#30D158', status: vitals.bloodOxygen > 96 ? 'normal' : 'watch' },
-    { label: 'Core Temp', value: vitals.temperature.toFixed(1), unit: '°C', icon: Thermometer, color: '#FF9F0A', status: 'normal' },
+    { label: 'Heart Rate', value: vitals.heartRate > 0 ? Math.round(vitals.heartRate) : null, unit: 'BPM', icon: Heart, color: '#FF453A', status: vitals.heartRate > 0 ? 'normal' : 'pending' },
+    { label: 'Respiration', value: vitals.respiration > 0 ? Math.round(vitals.respiration) : null, unit: 'BR/MIN', icon: Wind, color: '#0A84FF', status: vitals.respiration > 0 ? 'normal' : 'pending' },
+    { label: 'Blood O₂', value: null, unit: '% SpO2', icon: Droplets, color: '#30D158', status: 'na' },
+    { label: 'Core Temp', value: null, unit: '°C', icon: Thermometer, color: '#FF9F0A', status: 'na' },
   ];
 
   return (
@@ -197,6 +166,7 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
           <div className="grid grid-cols-2 gap-3 flex-1">
             {vitalCards.map(card => {
               const Icon = card.icon;
+              const hasVal = card.value !== null;
               return (
                 <div key={card.label} className="bg-[#0B0B0D] rounded-xl border border-[#1E1E22] p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between mb-2">
@@ -206,16 +176,23 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
                     </div>
                   </div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-[36px] font-bold text-white leading-none font-mono">{card.value}</span>
-                    <span className="text-[11px] text-[#8E8E93] font-medium mb-0.5">{card.unit}</span>
+                    {hasVal ? (
+                      <>
+                        <span className="text-[36px] font-bold text-white leading-none font-mono">{card.value}</span>
+                        <span className="text-[11px] text-[#8E8E93] font-medium mb-0.5">{card.unit}</span>
+                      </>
+                    ) : (
+                      <span className="text-[28px] font-bold text-[#8E8E93]/40 leading-none font-mono">—</span>
+                    )}
                   </div>
                   <div className="mt-2 h-1 bg-[#1E1E22] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{
-                      backgroundColor: card.color,
-                      width: card.label === 'Heart Rate' ? `${((Number(card.value) - 40) / 120) * 100}%` :
-                             card.label === 'Blood O₂' ? `${Number(card.value)}%` : '65%',
-                      opacity: 0.7,
-                    }} />
+                    {hasVal && (
+                      <div className="h-full rounded-full" style={{
+                        backgroundColor: card.color,
+                        width: card.label === 'Heart Rate' ? `${((Number(card.value) - 40) / 120) * 100}%` : '65%',
+                        opacity: 0.7,
+                      }} />
+                    )}
                   </div>
                 </div>
               );
@@ -225,6 +202,30 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
 
         {/* Scan Engine */}
         <div className="flex-1 bg-[#16161A] rounded-2xl border border-[#1E1E22] p-5 flex flex-col">
+          {/* Onboarding instructions — hidden after first scan */}
+          {!scanning && countdown === 10 && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="mb-4 bg-[#0B0B0D] rounded-xl border border-[#0A84FF]/20 p-4 overflow-hidden"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 rounded-lg bg-[#0A84FF]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Activity className="w-4 h-4 text-[#0A84FF]" />
+                </div>
+                <div>
+                  <h4 className="text-[13px] font-semibold text-white mb-1">How to use the scanner</h4>
+                  <ul className="space-y-1">
+                    <li className="text-[11px] text-[#8E8E93]">• Position your face in the camera viewport on the Intake page</li>
+                    <li className="text-[11px] text-[#8E8E93]">• Ensure even lighting — avoid strong shadows on your face</li>
+                    <li className="text-[11px] text-[#8E8E93]">• Remain still during the 10-second compliance scan</li>
+                    <li className="text-[11px] text-[#8E8E93]">• The face mesh overlay confirms tracking is active</li>
+                  </ul>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           <span className="text-[13px] font-semibold text-white mb-5">Load Resistance Engine</span>
 
           {/* Mode toggle */}
