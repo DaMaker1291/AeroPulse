@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Brain, ChevronRight } from 'lucide-react';
 
@@ -6,6 +6,7 @@ interface Page1Props {
   onUnlockNavigation: () => void;
   targetStatus?: 'locked' | 'acquiring' | 'standby';
   streamUrl?: string;
+  cameraStream?: MediaStream | null;
 }
 
 const questions = [
@@ -24,6 +25,7 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
   const [aiConfidence, setAiConfidence] = useState(0.74);
   const [scanAngle, setScanAngle] = useState(0);
   const [streamError, setStreamError] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const rotInterval = setInterval(() => {
@@ -180,13 +182,13 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
         {/* Viewport */}
         <div className="flex-1 mx-5 mt-4 mb-4 bg-[#0B0B0D] rounded-xl relative overflow-hidden border border-[#1E1E22]">
           {/* Live camera feed */}
-          {streamUrl && !streamError && (
-            <img
-              src={streamUrl}
-              alt="Camera feed"
+          {cameraStream && (
+            <video
+              ref={videoRef}
+              srcObject={cameraStream}
+              autoPlay playsInline muted
               className="absolute inset-0 w-full h-full object-cover"
               style={{ filter: 'brightness(0.9) contrast(1.05)' }}
-              onError={() => setStreamError(true)}
             />
           )}
           {/* Gradient atmosphere */}

@@ -232,6 +232,7 @@ export default function App() {
                     onUnlockNavigation={handleUnlockNavigation}
                     targetStatus={backend.targetStatus}
                     streamUrl={backend.streamUrl}
+                    cameraStream={backend.cameraStream}
                   />
                 )}
                 {currentPage === 'biometric' && (
