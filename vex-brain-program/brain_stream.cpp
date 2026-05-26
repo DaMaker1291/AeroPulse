@@ -1,60 +1,53 @@
 /*==============================================================================
   AeroPulse VEX Brain Bridge — USB Serial Data Stream
   ==============================================================================
-  Deploy via VEXcode C++:
-    1. File → New C++ Project
-    2. Open Devices → add Motor on PORT3 (18:1, no reverse)
-    3. Open Devices → add Motor on PORT4 (18:1, reverse)
-    4. Replace main.cpp with this file
-    5. Connect Brain via USB → Download → Run
+  For PROS (not VEXcode).
+  
+  Deploy:
+    1. `pros conduct` or `pros build`
+    2. Upload via USB — printf() streams over USB CDC serial at 115200
 
   Wiring:
     Motor PORT3 = Left grip  (reverse = false)
     Motor PORT4 = Right grip (reverse = true)
 
-  Protocol (USB serial at 115200 baud, KEY:VALUE pairs):
-    Stream: M3_TORQUE:0.12,M3_POS:45.0,M3_CURRENT:0.05,M4_TORQUE:...
+  Protocol (USB serial, KEY:VALUE pairs, one line per frame):
+    M3_TORQUE:0.12,M3_POS:45.0,M3_CURRENT:50.0,M4_TORQUE:...
   =============================================================================*/
 
-#include "vex.h"
+#include "main.h"
 
-using namespace vex;
+pros::Motor gripLeft(3, pros::E_MOTOR_GEARSET_18, false);
+pros::Motor gripRight(4, pros::E_MOTOR_GEARSET_18, true);
 
-motor gripLeft  = motor(PORT3, ratio18_1, false);
-motor gripRight = motor(PORT4, ratio18_1, true);
+void initialize() {
+  pros::lcd::initialize();
+  pros::lcd::set_text(0, "AeroPulse VEX Bridge");
+  pros::lcd::set_text(1, "Streaming 50 Hz");
+  pros::lcd::set_text(2, "ACTIVE");
+}
 
-int main() {
-  gripLeft.setStopping(hold);
-  gripRight.setStopping(hold);
-
-  Brain.Screen.clearScreen();
-  Brain.Screen.setFont(mono20);
-  Brain.Screen.print("AeroPulse VEX Bridge");
-  Brain.Screen.newLine();
-  Brain.Screen.print("Streaming 50 Hz");
-  Brain.Screen.newLine();
-  Brain.Screen.print("ACTIVE");
-
-  int frameCount = 0;
+void opcontrol() {
+  int frame = 0;
 
   while (true) {
-    double tL = gripLeft.torque(Nm);
-    double pL = gripLeft.position(degrees);
-    double cL = gripLeft.current(amp);
-    double tR = gripRight.torque(Nm);
-    double pR = gripRight.position(degrees);
-    double cR = gripRight.current(amp);
+    double tL = gripLeft.get_torque();
+    double pL = gripLeft.get_position();
+    double cL = gripLeft.get_current_draw() / 1000.0; // mA → A
+    double tR = gripRight.get_torque();
+    double pR = gripRight.get_position();
+    double cR = gripRight.get_current_draw() / 1000.0;
 
     printf("M3_TORQUE:%.3f,M3_POS:%.1f,M3_CURRENT:%.3f,"
            "M4_TORQUE:%.3f,M4_POS:%.1f,M4_CURRENT:%.3f\n",
            tL, pL, cL, tR, pR, cR);
 
-    frameCount++;
-    if (frameCount % 20 == 0) {
-      Brain.Screen.clearLine(2);
-      Brain.Screen.print("L:%.2fNm R:%.2fNm", tL, tR);
+    if (++frame % 20 == 0) {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "L:%.2fNm R:%.2fNm", tL, tR);
+      pros::lcd::set_text(2, buf);
     }
 
-    vex::task::sleep(20);
+    pros::delay(20);
   }
 }
