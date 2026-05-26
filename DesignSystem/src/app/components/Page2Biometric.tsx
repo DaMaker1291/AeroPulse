@@ -129,10 +129,10 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
   const isMobile = useIsMobile();
 
   return (
-    <div className={`flex flex-col gap-3 sm:gap-4 ${isMobile ? 'pb-4' : 'h-full'}`}>
+    <div className={`flex flex-col gap-3 sm:gap-4 ${isMobile ? 'pb-4' : 'min-h-0 flex-1'}`}>
 
       {/* Dual Oscilloscope Row */}
-      <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] p-3 sm:p-5 flex-shrink-0 overflow-hidden ${isMobile ? '' : ''}`} style={{ height: isMobile ? 240 : '42%', minHeight: isMobile ? 180 : 200 }}>
+      <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] p-3 sm:p-5 flex-shrink-0 overflow-hidden`} style={{ height: isMobile ? 220 : 260, minHeight: isMobile ? 180 : 220 }}>
         <div className={`grid ${isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-4'} h-full`}>
 
           {/* Subplot A: rPPG */}

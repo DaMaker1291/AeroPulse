@@ -133,7 +133,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
   const isComplete = completedPages.has(currentPage);
 
   const renderContent = () => (
-    <div className="flex flex-col gap-3">
+    <div className={`flex flex-col gap-3 ${isMobile ? '' : 'min-h-0 flex-1'}`}>
       {/* Step Guide Banner */}
       {showGuide && guide && guide.instructions.length > 0 && (
         <motion.div
@@ -205,7 +205,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.18, ease: 'easeOut' }}
-          className={isMobile ? '' : 'h-full'}
+          className={isMobile ? '' : 'min-h-0 flex-1'}
         >
           {currentPage === 'intake' && (
             <Page1AdaptiveIntake
@@ -471,7 +471,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
         </aside>
 
         <main className="flex-1 flex flex-col overflow-hidden bg-[#0D0D10]">
-          <div className="flex-1 p-5 overflow-auto">
+          <div className="flex-1 flex flex-col p-5 overflow-auto min-h-0">
             {renderContent()}
           </div>
         </main>
