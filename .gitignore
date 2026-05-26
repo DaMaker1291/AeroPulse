@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+node_modules/
+.DS_Store
+*.zip
+_camera_test.png
+_camera_debug.png
+_camera_reset.png
+_ffmpeg_test.png
+rppg_debug.png
+
+# DesignSystem build output (CI builds & deploys)
+DesignSystem/dist/
+DesignSystem/node_modules/
