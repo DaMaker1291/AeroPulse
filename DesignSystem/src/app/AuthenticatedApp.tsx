@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Activity, Scan, Brain, Building2, Heart, Lock, LogOut, ChevronRight } from 'lucide-react';
+import { Activity, Scan, Brain, Building2, Heart, Lock, LogOut, ChevronRight, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { Page1AdaptiveIntake } from './components/Page1AdaptiveIntake';
 import { Page2Biometric } from './components/Page2Biometric';
@@ -28,6 +28,60 @@ const pages = [
   { key: 'labvanced' as PageKey, name: 'LabVanced', step: '05', icon: Heart, desc: 'rPPG Technology' },
 ];
 
+const stepGuides: Record<PageKey, { title: string; instructions: string[]; action: string }> = {
+  intake: {
+    title: 'Step 1: Face Positioning & Screening',
+    instructions: [
+      'Position your face centered in the camera viewport below',
+      'Ensure good lighting — avoid backlight or shadows on your face',
+      'Complete the screening questions (Yes / No / Don\'t Know)',
+      'Wait for the green "TARGET LOCKED" status to appear',
+    ],
+    action: 'Hold still until lock',
+  },
+  biometric: {
+    title: 'Step 2: Biometric Scan',
+    instructions: [
+      'Press the "Execute 10-Second Compliance Scan" button',
+      'Remain completely still during the 10-second countdown',
+      'Keep your face visible in the camera throughout',
+      'Vitals will appear automatically after scanning',
+    ],
+    action: 'Press scan button below',
+  },
+  triage: {
+    title: 'Step 3: Review Analysis',
+    instructions: [
+      'Review your vital signs and physiological observations',
+      'Check the Planetary Health environmental correlation',
+      'Export your report as PDF if needed',
+      'Share results with your healthcare provider',
+    ],
+    action: 'Review complete →',
+  },
+  enterprise: {
+    title: 'Step 4: Enterprise Fleet',
+    instructions: [
+      'View the enterprise fleet audit dashboard',
+      'Monitor connected devices and patient sessions',
+    ],
+    action: 'View dashboard',
+  },
+  labvanced: {
+    title: 'Step 5: Technology Overview',
+    instructions: [
+      'Learn about rPPG (remote photoplethysmography) technology',
+      'Understand how camera-based vital sign extraction works',
+    ],
+    action: 'Learn more',
+  },
+  onboarding: {
+    title: 'Setup Complete',
+    instructions: [],
+    action: '',
+  },
+};
+
 interface AuthenticatedAppProps {
   user: UserData;
   onSignOut: () => void;
@@ -38,9 +92,12 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
   const [unlockedPages, setUnlockedPages] = useState<Set<PageKey>>(new Set(['intake', 'labvanced', 'onboarding']));
   const [completedPages, setCompletedPages] = useState<Set<PageKey>>(new Set());
   const [patientInfo, setPatientInfo] = useState({ reasonForVisit: '', age: '', gender: '' });
+  const [showGuide, setShowGuide] = useState(true);
 
   const backend = useWebSocket();
   const isMobile = useIsMobile();
+
+  const pageOrder: PageKey[] = ['intake', 'biometric', 'triage', 'enterprise', 'labvanced'];
 
   const handleUnlockNavigation = () => {
     setUnlockedPages(new Set(['intake', 'biometric', 'triage', 'enterprise', 'labvanced', 'onboarding']));
@@ -56,57 +113,153 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
     if (unlockedPages.has(key)) setCurrentPage(key);
   };
 
+  const currentIdx = pageOrder.indexOf(currentPage);
+
+  const goNext = () => {
+    const next = pageOrder[currentIdx + 1];
+    if (next && unlockedPages.has(next)) {
+      setCurrentPage(next);
+    }
+  };
+
+  const goPrev = () => {
+    const prev = pageOrder[currentIdx - 1];
+    if (prev && unlockedPages.has(prev)) {
+      setCurrentPage(prev);
+    }
+  };
+
+  const guide = stepGuides[currentPage];
+  const isComplete = completedPages.has(currentPage);
+
   const renderContent = () => (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={currentPage}
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        transition={{ duration: 0.18, ease: 'easeOut' }}
-        className={isMobile ? '' : 'h-full'}
-      >
-        {currentPage === 'intake' && (
-          <Page1AdaptiveIntake
-            onUnlockNavigation={handleUnlockNavigation}
-            targetStatus={backend.targetStatus}
-            streamUrl={backend.streamUrl}
-            cameraStream={backend.cameraStream}
-            faceMesh={backend.faceMesh}
-            onPatientInfo={setPatientInfo}
-            patientInfo={patientInfo}
-          />
-        )}
-        {currentPage === 'biometric' && (
-          <Page2Biometric
-            onScanComplete={handleScanComplete}
-            backendVitals={backend.vitals}
-            backendRppgWave={backend.rppgWave}
-            backendM3Wave={backend.m3Wave}
-            backendM4Wave={backend.m4Wave}
-            cameraConnected={backend.cameraConnected}
-          />
-        )}
-        {currentPage === 'triage' && (
-          <Page3Triage
-            backendTriage={backend.triage}
-            backendFft={backend.fft}
-            backendVitals={backend.vitals}
-            reasonForVisit={patientInfo.reasonForVisit}
-            patientAge={patientInfo.age}
-            patientGender={patientInfo.gender}
-          />
-        )}
-        {currentPage === 'enterprise' && (
-          <Page4Enterprise
-            backendVitals={backend.vitals}
-            backendRppgWave={backend.rppgWave}
-          />
-        )}
-        {currentPage === 'labvanced' && <Page5Labvanced />}
-        {currentPage === 'onboarding' && <Page6Onboarding />}
-      </motion.div>
-    </AnimatePresence>
+    <div className="flex flex-col gap-3">
+      {/* Step Guide Banner */}
+      {showGuide && guide && guide.instructions.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-[#16161A] rounded-2xl border border-[#0A84FF]/20 p-3 sm:p-4"
+        >
+          <div className="flex items-start gap-3">
+            <div className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ${isComplete ? 'bg-[#30D158]/15' : 'bg-[#0A84FF]/15'}`}>
+              {isComplete ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#30D158]" />
+              ) : (
+                <span className="text-[11px] font-bold text-[#0A84FF]">{currentIdx + 1}</span>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <h3 className={`text-[12px] sm:text-[13px] font-semibold ${isComplete ? 'text-[#30D158]' : 'text-white'}`}>
+                  {isComplete ? `✓ ${guide.title.replace('Step', 'Step')}` : guide.title}
+                </h3>
+                {!isMobile && (
+                  <button onClick={() => setShowGuide(false)} className="text-[9px] text-[#8E8E93]/50 hover:text-white transition-colors flex-shrink-0">
+                    Dismiss
+                  </button>
+                )}
+              </div>
+              <ul className="space-y-0.5">
+                {guide.instructions.map((inst, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-[11px] sm:text-[12px] text-[#AEAEB2]">
+                    <span className="text-[#0A84FF] mt-0.5 flex-shrink-0">▸</span>
+                    {inst}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          {/* Navigation buttons */}
+          {!isMobile && (
+            <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#1E1E22]">
+              <div className="flex items-center gap-2">
+                {currentIdx > 0 && (
+                  <button onClick={goPrev} className="flex items-center gap-1 text-[11px] text-[#8E8E93] hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-[#1E1E22]">
+                    ← Back
+                  </button>
+                )}
+                <span className="text-[10px] text-[#8E8E93]/50 font-mono">
+                  Step {currentIdx + 1} of {pageOrder.length}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] text-[#8E8E93]/40 italic">{guide.action}</span>
+                {currentIdx < pageOrder.length - 1 && unlockedPages.includes(pageOrder[currentIdx + 1]) && (
+                  <button onClick={goNext} className="flex items-center gap-1 text-[11px] text-[#0A84FF] font-semibold hover:text-white transition-colors px-3 py-1.5 rounded-lg bg-[#0A84FF]/10 hover:bg-[#0A84FF]/20">
+                    Next Step <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* Page content */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={currentPage}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          className={isMobile ? '' : 'h-full'}
+        >
+          {currentPage === 'intake' && (
+            <Page1AdaptiveIntake
+              onUnlockNavigation={handleUnlockNavigation}
+              targetStatus={backend.targetStatus}
+              streamUrl={backend.streamUrl}
+              cameraStream={backend.cameraStream}
+              faceMesh={backend.faceMesh}
+              onPatientInfo={setPatientInfo}
+              patientInfo={patientInfo}
+            />
+          )}
+          {currentPage === 'biometric' && (
+            <Page2Biometric
+              onScanComplete={handleScanComplete}
+              backendVitals={backend.vitals}
+              backendRppgWave={backend.rppgWave}
+              backendM3Wave={backend.m3Wave}
+              backendM4Wave={backend.m4Wave}
+              cameraConnected={backend.cameraConnected}
+            />
+          )}
+          {currentPage === 'triage' && (
+            <Page3Triage
+              backendTriage={backend.triage}
+              backendFft={backend.fft}
+              backendVitals={backend.vitals}
+              reasonForVisit={patientInfo.reasonForVisit}
+              patientAge={patientInfo.age}
+              patientGender={patientInfo.gender}
+            />
+          )}
+          {currentPage === 'enterprise' && (
+            <Page4Enterprise
+              backendVitals={backend.vitals}
+              backendRppgWave={backend.rppgWave}
+            />
+          )}
+          {currentPage === 'labvanced' && <Page5Labvanced />}
+          {currentPage === 'onboarding' && <Page6Onboarding />}
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Mobile next step button */}
+      {isMobile && showGuide && currentIdx < pageOrder.length - 1 && unlockedPages.includes(pageOrder[currentIdx + 1]) && (
+        <motion.button
+          onClick={goNext}
+          whileTap={{ scale: 0.97 }}
+          className="w-full h-12 rounded-xl bg-[#0A84FF] text-white font-semibold text-[13px] flex items-center justify-center gap-2 shadow-lg shadow-[#0A84FF]/10 flex-shrink-0"
+        >
+          Next: {pages.find(p => p.key === pageOrder[currentIdx + 1])?.name} <ArrowRight className="w-4 h-4" />
+        </motion.button>
+      )}
+    </div>
   );
 
   if (isMobile) {
@@ -116,7 +269,6 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
           style: { background: '#16161A', border: '1px solid #2C2C2E', color: '#fff' }
         }} />
 
-        {/* Mobile Header */}
         <header className="h-12 bg-[#0B0B0D] border-b border-[#1E1E22] flex items-center justify-between px-4 flex-shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-[#0A84FF] flex items-center justify-center">
@@ -135,14 +287,12 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
           </div>
         </header>
 
-        {/* Mobile Content */}
         <main className="flex-1 overflow-auto bg-[#0D0D10]">
           <div className="p-3 min-h-full">
             {renderContent()}
           </div>
         </main>
 
-        {/* Mobile Bottom Tab Bar */}
         <nav className="h-14 bg-[#0B0B0D] border-t border-[#1E1E22] flex items-center justify-around px-1 flex-shrink-0 pb-1">
           {pages.map(page => {
             const isActive = currentPage === page.key;
@@ -182,7 +332,6 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
         style: { background: '#16161A', border: '1px solid #2C2C2E', color: '#fff' }
       }} />
 
-      {/* Top Header */}
       <header className="h-14 bg-[#0B0B0D] border-b border-[#1E1E22] flex items-center justify-between px-6 flex-shrink-0">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2.5">
@@ -211,23 +360,15 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
           <div className="w-8 h-8 rounded-full bg-[#0A84FF]/15 border border-[#0A84FF]/25 flex items-center justify-center">
             <span className="text-[12px] font-bold text-[#0A84FF]">{user?.name?.charAt(0) || 'U'}</span>
           </div>
-          <button
-            onClick={onSignOut}
-            className="flex items-center gap-1.5 text-[#8E8E93] hover:text-white transition-colors"
-          >
+          <button onClick={onSignOut} className="flex items-center gap-1.5 text-[#8E8E93] hover:text-white transition-colors">
             <LogOut className="w-3.5 h-3.5" />
             <span className="text-[12px]">Sign out</span>
           </button>
         </div>
       </header>
 
-      {/* Main Layout */}
       <div className="flex-1 flex overflow-hidden">
-
-        {/* Sidebar */}
         <aside className="w-60 bg-[#0B0B0D] border-r border-[#1E1E22] flex flex-col flex-shrink-0">
-
-          {/* Patient session indicator */}
           <div className="px-4 py-5 border-b border-[#1E1E22]">
             <div className="text-[10px] text-[#8E8E93] tracking-widest uppercase font-medium mb-2">Active Session</div>
             <div className="flex items-center gap-2">
@@ -251,7 +392,6 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
             </div>
           </div>
 
-          {/* Navigation */}
           <nav className="flex-1 p-3 space-y-1">
             {pages.map(page => {
               const isActive = currentPage === page.key;
@@ -309,7 +449,6 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
             })}
           </nav>
 
-          {/* Bottom info */}
           <div className="p-4 border-t border-[#1E1E22]">
             <div className="flex items-center justify-between">
               <div>
@@ -331,7 +470,6 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
           </div>
         </aside>
 
-        {/* Main viewport */}
         <main className="flex-1 flex flex-col overflow-hidden bg-[#0D0D10]">
           <div className="flex-1 p-5 overflow-auto">
             {renderContent()}
@@ -339,7 +477,6 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
         </main>
       </div>
 
-      {/* Bottom Telemetry HUD */}
       <footer className="h-9 bg-[#0B0B0D] border-t border-[#1E1E22] flex items-center justify-between px-6 flex-shrink-0">
         <div className="flex items-center gap-5">
           <div className="flex items-center gap-2">
