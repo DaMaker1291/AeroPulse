@@ -117,38 +117,37 @@ export function useWebSocket(_url?: string) {
     const processFrame = async (ts: number) => {
       if (!running.current) return;
       animId = requestAnimationFrame(processFrame);
-      if (!faceLandmarker || !videoEl || !canvasEl) return;
+      if (!videoEl || !canvasEl) return;
 
       try {
-        const result = faceLandmarker.detectForVideo(videoEl, performance.now());
-        const hasFace = result.faceLandmarks && result.faceLandmarks.length > 0;
+        const ctx = canvasEl.getContext('2d');
+        if (!ctx) return;
+        const w = videoEl.videoWidth || 640;
+        const h = videoEl.videoHeight || 480;
+        ctx.drawImage(videoEl, 0, 0, w, h);
+        const imgData = ctx.getImageData(0, 0, w, h);
 
-        if (hasFace) {
-          lastFaceTime = performance.now();
-          const landmarks = result.faceLandmarks[0];
-          const ctx = canvasEl.getContext('2d');
-          if (!ctx) return;
-          const w = videoEl.videoWidth;
-          const h = videoEl.videoHeight;
-          ctx.drawImage(videoEl, 0, 0, w, h);
-          const imgData = ctx.getImageData(0, 0, w, h);
-          const roi = computeSkinROI(landmarks, w, h);
-          if (roi) {
-            const rgb = extractRGB(imgData, roi);
-            rBuf.push(rgb.r);
-            gBuf.push(rgb.g);
-            bBuf.push(rgb.b);
-            const avgIntensity = (rgb.r + rgb.g + rgb.b) / 3;
-            intBuf.push(avgIntensity);
-            waveBuf[waveformIdx % WAVE_LEN] = avgIntensity;
-            waveformIdx++;
-            frameCount++;
-            signalQualityAccum += Math.abs(rgb.g - rgb.r) / (rgb.g + rgb.r + 1);
-            signalQualityCount++;
+        let hasFace = false;
+        let landmarks: { x: number; y: number }[] | null = null;
+
+        if (faceLandmarker) {
+          try {
+            const result = faceLandmarker.detectForVideo(videoEl, performance.now());
+            hasFace = result.faceLandmarks && result.faceLandmarks.length > 0;
+            if (hasFace) landmarks = result.faceLandmarks[0];
+          } catch (e) {
+            // MediaPipe detection failed this frame
           }
+        }
+
+        // Extract ROI: from face landmarks if available, otherwise center crop
+        let roi: { x: number; y: number; w: number; h: number } | null = null;
+        if (landmarks) {
+          roi = computeSkinROI(landmarks, w, h);
+          lastFaceTime = performance.now();
           if (faceLockStart === 0) faceLockStart = performance.now();
 
-          // Compute face symmetry from mesh: compare left vs right landmark distribution
+          // Compute face symmetry from mesh
           let leftSum = 0, rightSum = 0;
           let leftCount = 0, rightCount = 0;
           let cx = 0, cy = 0;
@@ -164,11 +163,10 @@ export function useWebSocket(_url?: string) {
           symmetryAccum += ratio;
           symmetryCount++;
 
-          // Track centroid for tremor detection
           centroidBufX.push(cx);
           centroidBufY.push(cy);
 
-          // Approximate facial micro-motion from frame-to-frame landmark jitter
+          // Facial micro-motion from frame-to-frame landmark jitter
           let motionSum = 0;
           for (let i = 0; i < landmarks.length; i++) {
             const dx = landmarks[i].x - (latestMesh?.[i * 2] ?? landmarks[i].x);
@@ -180,21 +178,44 @@ export function useWebSocket(_url?: string) {
 
           // Store face mesh
           const flat: number[] = [];
-          for (const lm of landmarks) {
-            flat.push(lm.x, lm.y);
-          }
+          for (const lm of landmarks) { flat.push(lm.x, lm.y); }
           latestMesh = flat;
         } else {
-          faceLockStart = 0;
-          latestMesh = null;
+          // No face detected — use center crop as fallback for signal extraction
+          const cropW = w * 0.4;
+          const cropH = h * 0.4;
+          roi = { x: (w - cropW) / 2, y: (h - cropH) / 2, w: cropW, h: cropH };
+          if (!faceLandmarker) {
+            // MediaPipe not available: treat as face-locked for signal pipeline
+            if (faceLockStart === 0) faceLockStart = performance.now();
+            lastFaceTime = performance.now();
+          } else if (faceLockStart !== 0 && performance.now() - lastFaceTime > 3000) {
+            faceLockStart = 0;
+            latestMesh = null;
+          }
+        }
+
+        if (roi) {
+          const rgb = extractRGB(imgData, roi);
+          rBuf.push(rgb.r);
+          gBuf.push(rgb.g);
+          bBuf.push(rgb.b);
+          const avgIntensity = (rgb.r + rgb.g + rgb.b) / 3;
+          intBuf.push(avgIntensity);
+          waveBuf[waveformIdx % WAVE_LEN] = avgIntensity;
+          waveformIdx++;
+          frameCount++;
+          signalQualityAccum += Math.abs(rgb.g - rgb.r) / (rgb.g + rgb.r + 1);
+          signalQualityCount++;
         }
 
         const now = performance.now();
         if (now - lastStateTime < STATE_INTERVAL) return;
         lastStateTime = now;
 
-        const faceLocked = hasFace && (performance.now() - lastFaceTime) < 3000;
-        const acquiring = faceLocked && (performance.now() - faceLockStart) < 4000;
+        const noMeshMode = !faceLandmarker;
+        const faceLocked = noMeshMode || (hasFace && (performance.now() - lastFaceTime) < 3000);
+        const acquiring = faceLocked && (faceLockStart > 0 && (performance.now() - faceLockStart) < 4000);
 
         // Heart rate every 2 seconds, minimum 10s of data
         if (faceLocked && frameCount > FFT_FS * 5 && now - lastHrTime > 2000) {

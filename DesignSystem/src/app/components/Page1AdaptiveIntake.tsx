@@ -347,13 +347,14 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
               ref={videoRef}
               autoPlay playsInline muted
               className="absolute inset-0 w-full h-full object-cover"
-              style={{ filter: 'brightness(0.9) contrast(1.05)' }}
+              style={{ filter: 'brightness(0.9) contrast(1.05)', transform: 'scaleX(-1)' }}
             />
           )}
-          {/* Face mesh overlay canvas */}
+          {/* Face mesh overlay canvas (flipped to match mirrored video) */}
           <canvas
             ref={canvasRef}
             className="absolute inset-0 w-full h-full pointer-events-none"
+            style={{ transform: 'scaleX(-1)' }}
           />
           {/* Gradient atmosphere */}
           <div className="absolute inset-0 bg-gradient-to-br from-[#0A84FF]/5 via-transparent to-[#30D158]/3 pointer-events-none" />
