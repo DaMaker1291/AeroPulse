@@ -198,18 +198,24 @@ export function useWebSocket(_url?: string) {
         cv.width = vid.videoWidth || 640;
         cv.height = vid.videoHeight || 480;
 
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm/'
-        );
-        faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task',
-            delegate: 'GPU',
-          },
-          runningMode: 'VIDEO',
-          numFaces: 1,
-        });
         setState(s => ({ ...s, cameraConnected: true, connected: true, streamUrl: 'camera', cameraStream: stream }));
+
+        try {
+          const vision = await FilesetResolver.forVisionTasks(
+            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm/'
+          );
+          faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task',
+              delegate: 'GPU',
+            },
+            runningMode: 'VIDEO',
+            numFaces: 1,
+          });
+        } catch (mlErr) {
+          console.warn('MediaPipe face landmarker failed to load — camera feed still active without face tracking:', mlErr);
+        }
+
         animId = requestAnimationFrame(processFrame);
       } catch (e) {
         console.error('Camera init error:', e);

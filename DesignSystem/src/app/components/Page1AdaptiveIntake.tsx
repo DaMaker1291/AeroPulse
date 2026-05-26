@@ -17,6 +17,11 @@ const questions = [
 ];
 
 export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTargetStatus, streamUrl, cameraStream }: Page1Props) {
+  useEffect(() => {
+    if (videoRef.current && cameraStream) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraStream]);
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
   const [targetStatus, setTargetStatus] = useState<'acquiring' | 'locked' | 'standby'>(propTargetStatus ?? 'standby');
@@ -185,7 +190,6 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
           {cameraStream && (
             <video
               ref={videoRef}
-              srcObject={cameraStream}
               autoPlay playsInline muted
               className="absolute inset-0 w-full h-full object-cover"
               style={{ filter: 'brightness(0.9) contrast(1.05)' }}
