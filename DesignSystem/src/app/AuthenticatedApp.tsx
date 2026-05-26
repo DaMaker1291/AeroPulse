@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Activity, Scan, Brain, Building2, Heart, Lock, LogOut, ChevronRight, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Activity, Scan, Brain, Building2, Heart, Lock, LogOut, ChevronRight, ArrowRight, CheckCircle2, Cable, Usb } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { Page1AdaptiveIntake } from './components/Page1AdaptiveIntake';
 import { Page2Biometric } from './components/Page2Biometric';
@@ -9,6 +9,7 @@ import { Page4Enterprise } from './components/Page4Enterprise';
 import { Page5Labvanced } from './components/Page5Labvanced';
 import { Page6Onboarding } from './components/Page6Onboarding';
 import { useWebSocket } from '../useWebSocket';
+import { useVexSerial } from '../useVexSerial';
 import { useIsMobile } from './components/ui/use-mobile';
 
 type PageKey = 'intake' | 'biometric' | 'triage' | 'enterprise' | 'labvanced' | 'onboarding';
@@ -95,7 +96,27 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
   const [showGuide, setShowGuide] = useState(true);
 
   const backend = useWebSocket();
+  const vex = useVexSerial();
   const isMobile = useIsMobile();
+
+  // Build m3/m4 wave arrays from VEX torque data in real time
+  const vexWaveLen = 60;
+  const vexM3Ref = useRef<number[]>([]);
+  const vexM4Ref = useRef<number[]>([]);
+  useEffect(() => {
+    if (vex.state.connected && vex.state.data) {
+      const torqueLeft = vex.state.data.m3Torque;
+      const torqueRight = vex.state.data.m4Torque;
+      // Map torque to 0-100 display range: 0 Nm → 50 (center), ~2 Nm → 95
+      const leftVal = Math.min(95, Math.max(5, 50 + torqueLeft * 22));
+      const rightVal = Math.min(95, Math.max(5, 50 + torqueRight * 22));
+      vexM3Ref.current = [...vexM3Ref.current.slice(-(vexWaveLen - 1)), leftVal];
+      vexM4Ref.current = [...vexM4Ref.current.slice(-(vexWaveLen - 1)), rightVal];
+    }
+  }, [vex.state.data, vex.state.connected]);
+
+  const vexM3Wave = vex.state.connected ? vexM3Ref.current : undefined;
+  const vexM4Wave = vex.state.connected ? vexM4Ref.current : undefined;
 
   const pageOrder: PageKey[] = ['intake', 'biometric', 'triage', 'enterprise', 'labvanced'];
 
@@ -223,8 +244,8 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
               onScanComplete={handleScanComplete}
               backendVitals={backend.vitals}
               backendRppgWave={backend.rppgWave}
-              backendM3Wave={backend.m3Wave}
-              backendM4Wave={backend.m4Wave}
+              backendM3Wave={vexM3Wave ?? backend.m3Wave}
+              backendM4Wave={vexM4Wave ?? backend.m4Wave}
               cameraConnected={backend.cameraConnected}
             />
           )}
@@ -480,13 +501,40 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
       <footer className="h-9 bg-[#0B0B0D] border-t border-[#1E1E22] flex items-center justify-between px-6 flex-shrink-0">
         <div className="flex items-center gap-5">
           <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#30D158]" style={{ animation: 'pulse 2s ease-in-out infinite' }} />
+            <div className={`w-1.5 h-1.5 rounded-full ${vex.state.connected ? 'bg-[#30D158]' : 'bg-[#8E8E93]/30'}`}
+                 style={vex.state.connected ? { animation: 'pulse 2s ease-in-out infinite' } : {}} />
             <span className="text-[10px] text-[#8E8E93] tracking-widest uppercase font-mono">USB COM · 115200 BAUD</span>
           </div>
           <div className="h-3 w-px bg-[#2C2C2E]" />
-          <span className="text-[10px] text-[#30D158] font-mono">CONNECTED</span>
+          {vex.state.connected ? (
+            <>
+              <span className="text-[10px] text-[#30D158] font-mono">VEX CONNECTED</span>
+              <div className="h-3 w-px bg-[#2C2C2E]" />
+              <span className="text-[10px] text-[#8E8E93] font-mono">{vex.state.portInfo}</span>
+            </>
+          ) : (
+            <button
+              onClick={vex.connect}
+              className="flex items-center gap-1.5 text-[10px] text-[#0A84FF] hover:text-white transition-colors font-mono"
+            >
+              <Usb className="w-3 h-3" />
+              CONNECT VEX
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-5">
+          {vex.state.connected && (
+            <>
+              <span className="text-[10px] text-[#8E8E93] font-mono tracking-widest">
+                L:{vex.state.data?.m3Torque.toFixed(2) ?? '?'}Nm
+              </span>
+              <div className="h-3 w-px bg-[#2C2C2E]" />
+              <span className="text-[10px] text-[#8E8E93] font-mono tracking-widest">
+                R:{vex.state.data?.m4Torque.toFixed(2) ?? '?'}Nm
+              </span>
+              <div className="h-3 w-px bg-[#2C2C2E]" />
+            </>
+          )}
           <span className="text-[10px] text-[#8E8E93] font-mono tracking-widest">AI PIPELINE</span>
           <div className="h-3 w-px bg-[#2C2C2E]" />
           <span className="text-[10px] text-[#0A84FF] font-mono font-medium">60 FPS · 50 Hz CORE</span>
