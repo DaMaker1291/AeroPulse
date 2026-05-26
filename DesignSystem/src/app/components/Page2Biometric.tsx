@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import { motion } from 'motion/react';
-import { Activity, Heart, Thermometer, Droplets, Gauge } from 'lucide-react';
+import { Activity, Heart, Droplets, Gauge } from 'lucide-react';
 import { useIsMobile } from './ui/use-mobile';
 
 interface VitalsData {
   heartRate: number;
   respiration: number;
   bloodOxygen: number;
-  temperature: number;
 }
 
 interface Page2Props {
@@ -30,7 +29,7 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
   const [scanMode, setScanMode] = useState<'compression' | 'tension'>('tension');
   const [waveData1, setWaveData1] = useState<Array<{ time: number; value: number }>>([]);
   const [waveData2, setWaveData2] = useState<Array<{ time: number; leftHand: number; rightHand: number }>>([]);
-  const [vitals, setVitals] = useState({ heartRate: 0, respiration: 0, bloodOxygen: 0, temperature: 0 });
+  const [vitals, setVitals] = useState({ heartRate: 0, respiration: 0, bloodOxygen: 0 });
   const tickRef = useRef(0);
 
   // Stable rPPG waveform: append new point from backend, maintain fixed window
@@ -100,7 +99,6 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
         heartRate: backendVitals.heartRate ?? prev.heartRate,
         respiration: backendVitals.respiration ?? prev.respiration,
         bloodOxygen: backendVitals.bloodOxygen ?? prev.bloodOxygen,
-        temperature: backendVitals.temperature ?? prev.temperature,
       }));
     }
   }, [backendVitals]);
@@ -123,7 +121,6 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
     { label: 'Heart Rate', value: vitals.heartRate > 0 ? Math.round(vitals.heartRate) : null, unit: 'BPM', icon: Heart, color: '#FF453A' },
     { label: 'Blood Pressure', value: vitals.heartRate > 0 ? `${bpSystolic}/${bpDiastolic}` : null, unit: 'mmHg', icon: Gauge, color: '#0A84FF' },
     { label: 'Blood O₂', value: vitals.bloodOxygen > 0 ? Math.round(vitals.bloodOxygen) : null, unit: '% SpO2', icon: Droplets, color: '#30D158' },
-    { label: 'Core Temp', value: vitals.temperature > 0 ? vitals.temperature.toFixed(1) : null, unit: '°C', icon: Thermometer, color: '#FF9F0A' },
   ];
 
   const isMobile = useIsMobile();

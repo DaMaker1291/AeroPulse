@@ -104,9 +104,18 @@ function peakInterpolation(mag: Float64Array, peakIdx: number): number {
   return peakIdx + (y0 - y2) / (2 * denom);
 }
 
-export function computeHeartRate(filtered: Float64Array, fs: number): { bpm: number; freqs: number[]; power: number[]; snr: number } {
+export interface HRResult {
+  bpm: number;
+  freqs: number[];
+  power: number[];
+  snr: number;
+  quality: number;
+  peakProminence: number;
+}
+
+export function computeHeartRate(filtered: Float64Array, fs: number): HRResult {
   const n = filtered.length;
-  const fftLen = nextPow2(n);
+  const fftLen = nextPow2(n * 2); // 2× zero-padding for better interpolation
   const han = hanningWindow(n);
   const padded = new Float64Array(fftLen);
   for (let i = 0; i < n; i++) padded[i] = filtered[i] * han[i];
@@ -114,21 +123,104 @@ export function computeHeartRate(filtered: Float64Array, fs: number): { bpm: num
   const binSpacing = fs / fftLen;
   let maxPower = 0;
   let peakIdx = 0;
+  let secondMaxPower = 0;
   const freqs: number[] = [];
   const power: number[] = [];
   let totalPower = 0;
+  let meanPower = 0;
   for (let i = 0; i < mag.length; i++) {
     const f = i * binSpacing;
     if (f < 0.75 || f > 2.75) continue;
+    const idx = freqs.length;
     freqs.push(f);
     power.push(mag[i]);
     totalPower += mag[i];
-    if (mag[i] > maxPower) { maxPower = mag[i]; peakIdx = i; }
+    if (mag[i] > maxPower) {
+      secondMaxPower = maxPower;
+      maxPower = mag[i];
+      peakIdx = i;
+    } else if (mag[i] > secondMaxPower) {
+      secondMaxPower = mag[i];
+    }
   }
+  meanPower = totalPower / Math.max(power.length, 1);
+
   const interpIdx = peakInterpolation(mag, peakIdx);
   const peakFreq = interpIdx * binSpacing;
-  const snr = totalPower > 0 ? maxPower / (totalPower / power.length) : 0;
-  return { bpm: peakFreq * 60, freqs, power, snr };
+  const snr = meanPower > 0 ? maxPower / Math.max(meanPower, 1e-30) : 0;
+
+  // Peak prominence: how dominant the peak is vs surrounding bins
+  const peakProminence = maxPower > 0 && secondMaxPower > 0
+    ? (maxPower - secondMaxPower) / maxPower
+    : 0;
+
+  // Composite quality score (0-1)
+  const snrNorm = Math.min(1, Math.max(0, (snr - 1.5) / 5.0));
+  const promNorm = Math.min(1, Math.max(0, peakProminence * 2));
+  const quality = 0.6 * snrNorm + 0.4 * promNorm;
+
+  return { bpm: peakFreq * 60, freqs, power, snr, quality, peakProminence };
+}
+
+export function computeHRQuality(
+  signal: Float64Array,
+  hrBpm: number,
+  hrResult: HRResult,
+  motionScore: number,
+): number {
+  // SNR factor (0-1)
+  const snrScore = Math.min(1, Math.max(0, (hrResult.snr - 1.5) / 5.0));
+
+  // Peak prominence factor (0-1)
+  const promScore = Math.min(1, Math.max(0, hrResult.peakProminence * 2));
+
+  // HR range factor: penalize extreme values
+  const hrScore = hrBpm >= 55 && hrBpm <= 110 ? 1.0
+    : hrBpm >= 50 && hrBpm <= 120 ? 0.7
+    : 0.3;
+
+  // Motion factor: 0 = high motion, 1 = no motion
+  const motionFactor = Math.max(0, 1 - motionScore * 3);
+
+  // Signal amplitude factor: need sufficient signal
+  let ampSum = 0;
+  for (let i = 0; i < signal.length; i++) ampSum += Math.abs(signal[i]);
+  const ampMean = ampSum / signal.length;
+  const ampScore = Math.min(1, ampMean * 10);
+
+  return 0.35 * snrScore + 0.20 * promScore + 0.15 * hrScore + 0.20 * motionFactor + 0.10 * ampScore;
+}
+
+export function adaptiveNoiseCancel(
+  signal: Float64Array,
+  reference: Float64Array,
+  mu: number = 0.01,
+  order: number = 4,
+): Float64Array {
+  const n = Math.min(signal.length, reference.length);
+  if (n < order + 1) return signal.slice(0, n);
+
+  const w = new Float64Array(order);
+  const out = new Float64Array(n);
+
+  for (let i = order; i < n; i++) {
+    let noiseEst = 0;
+    for (let j = 0; j < order; j++) {
+      noiseEst += w[j] * reference[i - j];
+    }
+    const error = signal[i] - noiseEst;
+    out[i] = error;
+
+    // LMS update
+    const norm = mu / (1e-10 + reference.slice(i - order, i).reduce((s, v) => s + v * v, 0));
+    for (let j = 0; j < order; j++) {
+      w[j] += norm * error * reference[i - j];
+    }
+  }
+
+  // Copy initial samples
+  for (let i = 0; i < order; i++) out[i] = signal[i];
+  return out;
 }
 
 export function computeSpO2(r: Float64Array, g: Float64Array): number {
@@ -224,31 +316,57 @@ export function extractRGB(imageData: ImageData, roi: { x: number; y: number; w:
   return { r: rs / count, g: gs / count, b: bs / count };
 }
 
-export function posProject(r: Float64Array, g: Float64Array, b: Float64Array): Float64Array {
+export function posProject(r: Float64Array, g: Float64Array, b: Float64Array, fs: number = 60): Float64Array {
   const n = r.length;
-  const meanR = r.reduce((a, v) => a + v, 0) / n;
-  const meanG = g.reduce((a, v) => a + v, 0) / n;
-  const meanB = b.reduce((a, v) => a + v, 0) / n;
-  if (meanR < 1 || meanG < 1 || meanB < 1) {
-    return new Float64Array(n);
+  if (n < 3) return new Float64Array(n);
+
+  const windowSec = 1.6;
+  const W = Math.max(3, Math.round(windowSec * fs));
+
+  // Cumulative sums for O(1) sliding window mean
+  const csR = new Float64Array(n + 1);
+  const csG = new Float64Array(n + 1);
+  const csB = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) {
+    csR[i + 1] = csR[i] + r[i];
+    csG[i + 1] = csG[i] + g[i];
+    csB[i + 1] = csB[i] + b[i];
   }
+
+  // Normalize each sample by its sliding window mean
   const nr = new Float64Array(n);
   const ng = new Float64Array(n);
   const nb = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    nr[i] = r[i] / meanR;
-    ng[i] = g[i] / meanG;
-    nb[i] = b[i] / meanB;
+    const start = Math.max(0, i - W + 1);
+    const segLen = i - start + 1;
+    const muR = (csR[i + 1] - csR[start]) / segLen;
+    const muG = (csG[i + 1] - csG[start]) / segLen;
+    const muB = (csB[i + 1] - csB[start]) / segLen;
+    nr[i] = r[i] / Math.max(muR, 1e-12);
+    ng[i] = g[i] / Math.max(muG, 1e-12);
+    nb[i] = b[i] / Math.max(muB, 1e-12);
   }
+
+  // POS projection: S1 = G_n - R_n, S2 = G_n + R_n - 2*B_n
   const x = new Float64Array(n);
   const y = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    x[i] = nr[i] - nb[i];
-    y[i] = nr[i] + ng[i] - 2 * nb[i];
+    x[i] = ng[i] - nr[i];
+    y[i] = ng[i] + nr[i] - 2.0 * nb[i];
   }
-  const stdX = Math.sqrt(x.reduce((s, v) => s + v * v, 0) / n);
-  const stdY = Math.sqrt(y.reduce((s, v) => s + v * v, 0) / n);
-  const alpha = stdX / (stdY || 1e-10);
+
+  let sx = 0, sy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    sx += x[i]; sy += y[i];
+    sxx += x[i] * x[i]; syy += y[i] * y[i];
+  }
+  const mx = sx / n, my = sy / n;
+  const vx = sxx / n - mx * mx, vy = syy / n - my * my;
+  const stdX = Math.sqrt(Math.max(vx, 1e-30));
+  const stdY = Math.sqrt(Math.max(vy, 1e-30));
+  const alpha = stdX / Math.max(stdY, 1e-30);
+
   const out = new Float64Array(n);
   for (let i = 0; i < n; i++) out[i] = x[i] - alpha * y[i];
   return out;

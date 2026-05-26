@@ -3,13 +3,13 @@ import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import {
   createBandpassFilter, applyFilterChain, computeHeartRate, computeRespirationRate, computeSpO2,
   extractRGB, computeSkinROI, posProject, SignalBuffer, FACE_MESH_CONNECTIONS,
+  HRResult, computeHRQuality, adaptiveNoiseCancel,
 } from './cameraPipeline';
 
 export interface VitalsData {
   heartRate: number;
   respiration: number;
   bloodOxygen: number;
-  temperature: number;
 }
 
 export interface TriageData {
@@ -44,7 +44,7 @@ const INITIAL: BackendState = {
   targetStatus: 'standby',
   cameraConnected: false,
   faceTracked: false,
-  vitals: { heartRate: 0, respiration: 0, bloodOxygen: 0, temperature: 0 },
+  vitals: { heartRate: 0, respiration: 0, bloodOxygen: 0 },
   rppgWave: [],
   m3Wave: [],
   m4Wave: [],
@@ -57,11 +57,17 @@ const INITIAL: BackendState = {
 };
 
 const RPPG_BUF_SECS = 30;
-const WINDOW_SECS = 5;
+const WINDOW_SECS = 10;
 const FFT_FS = 60;
 const STATE_INTERVAL = 80;
 const WAVE_LEN = 60;
-const HR_EMA_ALPHA = 0.6;
+const HR_EMA_ALPHA = 0.3;
+const HR_QUALITY_THRESHOLD = 0.25;
+const HR_STABILITY_REQUIRED = 3;
+const HR_MIN_ACCEPTABLE = 50;
+const HR_MAX_ACCEPTABLE = 180;
+const HR_CHANGE_MAX = 12;
+const MOTION_PAUSE_THRESHOLD = 0.08;
 const PROC_W = 320;
 const PROC_H = 240;
 
@@ -100,6 +106,19 @@ export function useWebSocket(_url?: string) {
     let latestMesh: number[] | null = null;
     let signalQualityAccum = 0;
     let signalQualityCount = 0;
+
+    // Quality gating & stability
+    let hrStabilityCount = 0;
+    let lastHrQuality = 0;
+    let consecutiveBadReadings = 0;
+    let lastValidHr = 0;
+
+    // Background reference for adaptive noise canceling
+    const bgBuf = new SignalBuffer(nBuf);
+
+    // Motion tracking: running RMS of landmark displacement
+    let motionRmsAccum = 0;
+    let motionRmsCount = 0;
 
     // Face mesh symmetry & tremor buffers
     const centroidBufX = new SignalBuffer(FFT_FS * 5);
@@ -209,6 +228,30 @@ export function useWebSocket(_url?: string) {
           frameCount++;
           signalQualityAccum += Math.abs(rgb.g - rgb.r) / (rgb.g + rgb.r + 1);
           signalQualityCount++;
+
+          // Extract background noise reference from top-left 10% corner
+          const bgROI = { x: 0, y: 0, w: PROC_W * 0.12, h: PROC_H * 0.12 };
+          const bgRgb = extractRGB(imgData, bgROI);
+          const bgIntensity = (bgRgb.r + bgRgb.g + bgRgb.b) / 3;
+          bgBuf.push(bgIntensity);
+
+          // Track motion from face landmark displacement
+          if (latestMesh) {
+            const pts = landmarks
+              ? landmarks.map(lm => ({ x: lm.x, y: lm.y }))
+              : null;
+            if (pts) {
+              let dxSum = 0, dySum = 0;
+              for (let i = 0; i < Math.min(pts.length, latestMesh.length / 2); i++) {
+                dxSum += (pts[i].x - latestMesh[i * 2]) ** 2;
+                dySum += (pts[i].y - latestMesh[i * 2 + 1]) ** 2;
+              }
+              const nPts = Math.min(pts.length, latestMesh.length / 2);
+              const rms = Math.sqrt((dxSum + dySum) / (nPts || 1));
+              motionRmsAccum += rms;
+              motionRmsCount++;
+            }
+          }
         }
 
         const now = performance.now();
@@ -218,44 +261,93 @@ export function useWebSocket(_url?: string) {
         const faceLocked = (performance.now() - lastFaceTime) < 3000;
         const acquiring = faceLocked && (faceLockStart > 0 && (performance.now() - faceLockStart) < 4000);
 
-        // Heart rate every 1 second, minimum 5s of data
-        if (faceLocked && frameCount > FFT_FS * 5 && now - lastHrTime > 1000) {
+        // Heart rate every 1 second, minimum 10s of data
+        const motionScore = motionRmsCount > 0 ? motionRmsAccum / motionRmsCount : 0;
+        const motionPaused = motionScore > MOTION_PAUSE_THRESHOLD;
+
+        if (faceLocked && frameCount > FFT_FS * WINDOW_SECS && now - lastHrTime > 1000 && !motionPaused) {
           lastHrTime = now;
           const rawR = rBuf.toArray();
           const rawG = gBuf.toArray();
           const rawB = bBuf.toArray();
-          const posSig = posProject(rawR, rawG, rawB);
+          const rawBg = bgBuf.toArray();
+
+          // Apply POS with sliding-window normalization (fixed formula)
+          const posSig = posProject(rawR, rawG, rawB, FFT_FS);
           const filtered = applyFilterChain(posSig, hrFilters);
+
+          // Adaptive noise canceling using background reference
+          const bgFiltered = applyFilterChain(
+            posProject(rawBg, rawBg, rawBg, FFT_FS),
+            hrFilters
+          );
+          const cleaned = adaptiveNoiseCancel(filtered, bgFiltered, 0.005, 4);
+
           const winLen = FFT_FS * WINDOW_SECS;
-          const n = Math.min(winLen, filtered.length);
+          const n = Math.min(winLen, cleaned.length);
           const win = new Float64Array(n);
-          const src = filtered;
+          const src = cleaned;
           for (let i = 0; i < n; i++) win[i] = src[src.length - n + i];
           const hr = computeHeartRate(win, FFT_FS);
-          if (hr.bpm > 40 && hr.bpm < 180) {
-            if (smoothedHr === 0) {
-              smoothedHr = hr.bpm;
-            } else {
-              smoothedHr = smoothedHr * (1 - HR_EMA_ALPHA) + hr.bpm * HR_EMA_ALPHA;
+
+          const bpmInRange = hr.bpm > HR_MIN_ACCEPTABLE && hr.bpm < HR_MAX_ACCEPTABLE;
+          const signalQuality = computeHRQuality(win, hr.bpm, hr, motionScore);
+
+          if (bpmInRange && signalQuality > HR_QUALITY_THRESHOLD) {
+            // Stability counter: require consistent quality readings
+            hrStabilityCount++;
+            consecutiveBadReadings = 0;
+            lastHrQuality = signalQuality;
+
+            if (hrStabilityCount >= HR_STABILITY_REQUIRED) {
+              // Adaptive EMA: use slower smoothing when quality is marginal, faster when good
+              const adaptiveAlpha = HR_EMA_ALPHA * (0.5 + 0.5 * signalQuality);
+
+              if (smoothedHr === 0) {
+                smoothedHr = hr.bpm;
+                lastValidHr = hr.bpm;
+              } else {
+                const delta = Math.abs(hr.bpm - smoothedHr);
+                if (delta < HR_CHANGE_MAX) {
+                  smoothedHr = smoothedHr * (1 - adaptiveAlpha) + hr.bpm * adaptiveAlpha;
+                  lastValidHr = hr.bpm;
+                } else if (delta < HR_CHANGE_MAX * 2) {
+                  // Moderate jump: blend with lower weight
+                  smoothedHr = smoothedHr * 0.7 + hr.bpm * 0.3;
+                }
+                // Large jump: ignore this reading
+              }
+              latestHr = Math.round(smoothedHr);
+              lastHrQuality = signalQuality;
+
+              // Respiration from intensity signal
+              const iBuf = intBuf.toArray();
+              const iWin = new Float64Array(n);
+              for (let i = 0; i < n; i++) iWin[i] = iBuf[iBuf.length - n + i];
+              const respRate = computeRespirationRate(iWin, FFT_FS);
+              latestRespiration = respRate > 3 && respRate < 30 ? Math.round(respRate) : 0;
             }
-            latestHr = Math.round(smoothedHr);
-            latestFreqs = hr.freqs;
-            latestPower = hr.power;
-
-            // Respiration from intensity signal
-            const iBuf = intBuf.toArray();
-            const iWin = new Float64Array(n);
-            for (let i = 0; i < n; i++) iWin[i] = iBuf[iBuf.length - n + i];
-            const respRate = computeRespirationRate(iWin, FFT_FS);
-            latestRespiration = respRate > 3 && respRate < 30 ? Math.round(respRate) : 0;
-
-            // Update stored POS signal for waveform display
-            const posLen = Math.min(WAVE_LEN, n);
-            for (let i = 0; i < posLen; i++) {
-              posBuf[posWfIdx % WAVE_LEN] = filtered[i];
-              posWfIdx++;
+          } else {
+            hrStabilityCount = 0;
+            consecutiveBadReadings++;
+            // After 5 consecutive bad readings, slowly drift toward 0
+            if (consecutiveBadReadings > 5 && smoothedHr > 0) {
+              smoothedHr = Math.max(0, smoothedHr - 1);
+              latestHr = Math.round(smoothedHr);
             }
           }
+
+          // Always update FFT data for display, but quality-gate HR
+          latestFreqs = hr.freqs;
+          latestPower = hr.power;
+
+          const posLen = Math.min(WAVE_LEN, n);
+          for (let i = 0; i < posLen; i++) {
+            posBuf[posWfIdx % WAVE_LEN] = cleaned[i];
+            posWfIdx++;
+          }
+        } else if (motionPaused && smoothedHr > 0) {
+          // During motion, hold HR steady - don't update
         }
 
         const avgQuality = signalQualityCount > 0 ? signalQualityAccum / signalQualityCount : 0;
@@ -307,6 +399,16 @@ export function useWebSocket(_url?: string) {
         const m3Val = Math.sin(posWfIdx * 0.098) * sigQual * 22 + 48;
         const m4Val = Math.cos(posWfIdx * 0.082) * sigQual * 17 + 52;
 
+        // Reset vitals when face is not tracked to avoid stale/fake data
+        if (!faceLocked) {
+          latestHr = 0;
+          latestRespiration = 0;
+          smoothedHr = 0;
+          hrStabilityCount = 0;
+          consecutiveBadReadings = 0;
+          lastHrQuality = 0;
+        }
+
         // SpO2 estimated from RGB ratio-of-ratios (red/green AC/DC)
         const spo2Est = latestHr > 0 ? computeSpO2(rBuf.toArray(), gBuf.toArray()) : 0;
 
@@ -318,7 +420,6 @@ export function useWebSocket(_url?: string) {
             heartRate: latestHr,
             respiration: latestRespiration,
             bloodOxygen: spo2Est,
-            temperature: 0,
           },
           rppgWave: rppgWav,
           m3Wave: [m3Val],

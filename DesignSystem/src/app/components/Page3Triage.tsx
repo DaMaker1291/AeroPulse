@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { FileText, AlertTriangle, CheckCircle2, Activity, Heart, Wind, Droplets, Thermometer, Brain, Globe, ThermometerSun } from 'lucide-react';
+import { FileText, AlertTriangle, CheckCircle2, Activity, Heart, Wind, Droplets, Brain, Globe, ThermometerSun } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { useIsMobile } from './ui/use-mobile';
@@ -11,7 +11,6 @@ interface VitalsData {
   heartRate: number;
   respiration: number;
   bloodOxygen: number;
-  temperature: number;
 }
 
 interface TriageData {
@@ -150,7 +149,6 @@ export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonFo
     { label: 'Heart Rate', value: backendVitals?.heartRate ?? 0, unit: 'BPM', icon: Heart, color: '#FF453A', normal: (v: number) => v >= 60 && v <= 100 },
     { label: 'Respiration', value: backendVitals?.respiration ?? 0, unit: 'Br/min', icon: Wind, color: '#0A84FF', normal: (v: number) => v >= 12 && v <= 20 },
     { label: 'Blood O₂', value: backendVitals?.bloodOxygen ?? 0, unit: '% SpO2', icon: Droplets, color: '#30D158', normal: (v: number) => v >= 95 || v === 0 },
-    { label: 'Core Temp', value: backendVitals?.temperature ?? 0, unit: '°C', icon: Thermometer, color: '#FF9F0A', normal: (v: number) => v >= 36.0 && v <= 37.5 || v === 0 },
   ];
 
   const generatePdf = useCallback(() => {
@@ -238,7 +236,7 @@ export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonFo
         if (backendVitals.respiration > 0) {
           kv('Respiration Rate:', `${Math.round(backendVitals.respiration)} Br/min`);
         }
-        para('Note: SpO2 and core temperature cannot be measured from a consumer webcam. They are not included in this report.', { size: 8, color: [140, 140, 145] });
+        para('Note: Core temperature is not included as it cannot be measured from a consumer webcam.', { size: 8, color: [140, 140, 145] });
       } else {
         para('No vital data recorded. Complete a biometric scan first.', { color: [180, 80, 0] });
       }
@@ -321,7 +319,7 @@ export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonFo
                   {hasVal ? (
                     <>
                       <span className={`text-[22px] sm:text-[30px] font-bold leading-none font-mono ${isNormal ? 'text-white' : 'text-[#FF453A]'}`}>
-                        {card.label === 'Core Temp' ? card.value.toFixed(1) : Math.round(card.value)}
+                        {Math.round(card.value)}
                       </span>
                       <span className="text-[9px] sm:text-[11px] text-[#8E8E93] font-medium">{card.unit}</span>
                     </>
