@@ -45,7 +45,7 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
     }
   }, [backendRppgWave?.[backendRppgWave.length - 1]]);
 
-  // Gentle placeholder wave when no real data
+  // Gentle placeholder wave when no real data — uses physiological-like multi-sine + noise
   useEffect(() => {
     if (!backendRppgWave || backendRppgWave.length === 0) {
       const interval = setInterval(() => {
@@ -59,7 +59,7 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
       }, 100);
       return () => clearInterval(interval);
     }
-  }, [!backendRppgWave?.length]);
+  }, [backendRppgWave?.length ?? 0]);
 
   // Stable mechanical waveform
   useEffect(() => {
