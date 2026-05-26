@@ -226,7 +226,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
                     targetStatus={backend.targetStatus}
                     streamUrl={backend.streamUrl}
                     cameraStream={backend.cameraStream}
-                    faceLandmarksRef={faceLandmarksRef}
+                    faceMesh={backend.faceMesh}
                   />
                 )}
                 {currentPage === 'biometric' && (

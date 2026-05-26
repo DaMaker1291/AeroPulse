@@ -1,25 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Brain, ChevronRight } from 'lucide-react';
-
-const FACE_CONNECTIONS: [number, number][] = [
-  [10,338],[338,297],[297,332],[332,284],[284,251],[251,389],[389,356],[356,454],[454,323],[323,361],[361,288],[288,397],[397,365],[365,379],[379,378],[378,400],[400,377],[377,152],[152,148],[148,176],[176,149],[149,150],[150,136],[136,172],[172,58],[58,132],[132,93],[93,234],[234,127],[127,162],[162,21],[21,54],[54,103],[103,67],[67,109],[109,10],
-  [46,53],[53,52],[52,65],[65,55],[70,63],[63,105],[105,66],[66,107],
-  [276,283],[283,282],[282,295],[295,285],[300,293],[293,334],[334,296],[296,336],
-  [33,7],[7,163],[163,144],[144,145],[145,153],[153,154],[154,155],[155,133],[33,246],[246,161],[161,160],[160,159],[159,158],[158,157],[157,173],[173,133],
-  [263,249],[249,390],[390,373],[373,374],[374,380],[380,381],[381,382],[382,362],[263,466],[466,388],[388,387],[387,386],[386,385],[385,384],[384,398],[398,362],
-  [61,146],[146,91],[91,181],[181,84],[84,17],[17,314],[314,405],[405,321],[321,375],[375,291],[61,185],[185,40],[40,39],[39,37],[37,0],[0,267],[267,269],[269,270],[270,409],[409,291],
-  [78,95],[95,88],[88,178],[178,87],[87,14],[14,317],[317,402],[402,318],[318,324],[324,308],[78,191],[191,80],[80,81],[81,82],[82,13],[13,312],[312,311],[311,310],[310,415],[415,308],
-  [168,6],[6,197],[197,195],[195,5],[5,4],[4,1],[1,19],[19,94],[94,2],
-  [2,326],[326,327],[327,294],[294,278],[278,279],[279,429],[429,436],[436,437],[437,416],[416,2],
-];
+import { FACE_MESH_CONNECTIONS } from '../../cameraPipeline';
 
 interface Page1Props {
   onUnlockNavigation: () => void;
   targetStatus?: 'locked' | 'acquiring' | 'standby';
   streamUrl?: string;
   cameraStream?: MediaStream | null;
-  faceLandmarksRef?: React.MutableRefObject<Array<{ x: number; y: number; z?: number }> | null>;
+  faceMesh?: number[] | null;
 }
 
 const questions = [
@@ -29,12 +18,14 @@ const questions = [
   { id: 4, text: "Have you had difficulty with fine motor tasks like writing or buttoning clothes?", category: "Dexterity" },
 ];
 
-export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTargetStatus, streamUrl, cameraStream, faceLandmarksRef }: Page1Props) {
-  useEffect(() => {
-    if (videoRef.current && cameraStream) {
-      videoRef.current.srcObject = cameraStream;
-    }
-  }, [cameraStream]);
+const MESH_COLOR = '#30D158';
+const MESH_LINE_WIDTH = 0.8;
+const MESH_DOT_RADIUS = 1;
+
+export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTargetStatus, streamUrl, cameraStream, faceMesh }: Page1Props) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const meshRef = useRef<number[] | null>(null);
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
   const [targetStatus, setTargetStatus] = useState<'acquiring' | 'locked' | 'standby'>(propTargetStatus ?? 'standby');
@@ -43,9 +34,81 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
   const [aiConfidence, setAiConfidence] = useState(0.74);
   const [scanAngle, setScanAngle] = useState(0);
   const [streamError, setStreamError] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const viewportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (videoRef.current && cameraStream) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraStream]);
+
+  // Face mesh render loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Set canvas size to match container
+    const parent = canvas.parentElement;
+    if (!parent) return;
+    const resize = () => {
+      const rect = parent.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(parent);
+
+    let animId: number;
+    const draw = () => {
+      const mesh = meshRef.current;
+      const cw = canvas.width;
+      const ch = canvas.height;
+      ctx.clearRect(0, 0, cw, ch);
+      if (mesh && mesh.length >= 478 * 2) {
+        ctx.strokeStyle = MESH_COLOR;
+        ctx.lineWidth = MESH_LINE_WIDTH;
+        ctx.fillStyle = MESH_COLOR;
+        ctx.globalAlpha = 0.6;
+
+        // Draw connections
+        for (const contour of FACE_MESH_CONNECTIONS) {
+          ctx.beginPath();
+          for (let i = 0; i < contour.length; i++) {
+            const idx = contour[i];
+            const x = mesh[idx * 2] * cw;
+            const y = mesh[idx * 2 + 1] * ch;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+
+        // Draw landmark dots
+        ctx.globalAlpha = 0.3;
+        for (let i = 0; i < 478; i++) {
+          const x = mesh[i * 2] * cw;
+          const y = mesh[i * 2 + 1] * ch;
+          ctx.beginPath();
+          ctx.arc(x, y, MESH_DOT_RADIUS, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+      animId = requestAnimationFrame(draw);
+    };
+    animId = requestAnimationFrame(draw);
+    return () => {
+      cancelAnimationFrame(animId);
+      ro.disconnect();
+    };
+  }, []);
+
+  // Sync faceMesh prop to ref for render loop
+  useEffect(() => {
+    meshRef.current = faceMesh ?? null;
+  }, [faceMesh]);
 
   useEffect(() => {
     const rotInterval = setInterval(() => {
@@ -53,35 +116,6 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
     }, 30);
     return () => clearInterval(rotInterval);
   }, []);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const container = viewportRef.current;
-    if (!canvas || !container) return;
-    let id = 0;
-    const draw = () => {
-      id = requestAnimationFrame(draw);
-      const lms = faceLandmarksRef?.current;
-      if (!lms || lms.length === 0) return;
-      const rect = container.getBoundingClientRect();
-      const w = Math.round(rect.width);
-      const h = Math.round(rect.height);
-      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.clearRect(0, 0, w, h);
-      ctx.strokeStyle = 'rgba(48, 209, 88, 0.3)';
-      ctx.lineWidth = 0.6;
-      for (const [i, j] of FACE_CONNECTIONS) {
-        const a = lms[i]; const b = lms[j];
-        if (a && b) { ctx.beginPath(); ctx.moveTo(a.x * w, a.y * h); ctx.lineTo(b.x * w, b.y * h); ctx.stroke(); }
-      }
-      ctx.fillStyle = 'rgba(48, 209, 88, 0.5)';
-      for (const p of lms) { ctx.beginPath(); ctx.arc(p.x * w, p.y * h, 1, 0, 2 * Math.PI); ctx.fill(); }
-    };
-    id = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(id);
-  }, [faceLandmarksRef]);
 
   useEffect(() => {
     if (propTargetStatus === 'locked') {
@@ -229,7 +263,7 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
         </div>
 
         {/* Viewport */}
-        <div ref={viewportRef} className="flex-1 mx-5 mt-4 mb-4 bg-[#0B0B0D] rounded-xl relative overflow-hidden border border-[#1E1E22]">
+        <div className="flex-1 mx-5 mt-4 mb-4 bg-[#0B0B0D] rounded-xl relative overflow-hidden border border-[#1E1E22]">
           {/* Live camera feed */}
           {cameraStream && (
             <video
@@ -239,10 +273,13 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
               style={{ filter: 'brightness(0.9) contrast(1.05)' }}
             />
           )}
-          {/* Face mesh overlay */}
-          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none z-10" />
+          {/* Face mesh overlay canvas */}
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0 w-full h-full pointer-events-none"
+          />
           {/* Gradient atmosphere */}
-          <div className="absolute inset-0 bg-gradient-to-br from-[#0A84FF]/5 via-transparent to-[#30D158]/3" />
+          <div className="absolute inset-0 bg-gradient-to-br from-[#0A84FF]/5 via-transparent to-[#30D158]/3 pointer-events-none" />
 
           {/* Corner brackets */}
           {[
@@ -255,18 +292,18 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
           ))}
 
           {/* Scan lines */}
-          <div className="absolute inset-0 opacity-[0.03]" style={{
+          <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{
             backgroundImage: 'repeating-linear-gradient(0deg, #0A84FF 0px, #0A84FF 1px, transparent 1px, transparent 4px)',
           }} />
 
           {/* Grid overlay */}
-          <div className="absolute inset-0 opacity-[0.04]" style={{
+          <div className="absolute inset-0 opacity-[0.04] pointer-events-none" style={{
             backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
             backgroundSize: '40px 40px',
           }} />
 
           {/* Reticle */}
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <motion.div
               animate={{
                 opacity: targetStatus === 'locked' ? 1 : targetStatus === 'acquiring' ? 0.8 : 0.4,
@@ -324,7 +361,7 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
           </div>
 
           {/* Data readouts */}
-          <div className="absolute top-3 left-3 right-3 flex justify-between">
+          <div className="absolute top-3 left-3 right-3 flex justify-between pointer-events-none">
             <div className="bg-[#0B0B0D]/80 backdrop-blur px-2.5 py-1.5 rounded-lg border border-[#1E1E22]">
               <span className="text-[9px] font-mono text-[#8E8E93]">PAN</span>
               <span className="text-[10px] font-mono text-white ml-2">{panValue}°</span>

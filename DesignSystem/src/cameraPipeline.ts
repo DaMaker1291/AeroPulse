@@ -13,17 +13,17 @@ export class BiquadFilter {
   reset() { this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0; }
 }
 
-const SOS_COEFFS: [number, number, number, number, number][] = [
+const SOS_COEFFS_HR: [number, number, number, number, number][] = [
   [0.0000008987, 0.0000017973, 0.0000008987, -1.7457043886, 0.7780357524],
   [1, 2, 1, -1.7456878584, 0.8034788479],
   [1, 2, 1, -1.8423039935, 0.8553828891],
-  [1, -2, 1, -1.8424727643, 0.9194858877],
+  [1, -2, 1, -1.8424727644, 0.9194858877],
   [1, -2, 1, -1.9178839034, 0.9255442094],
   [1, -2, 1, -1.9702374417, 0.9764941797],
 ];
 
 export function createBandpassFilter(): BiquadFilter[] {
-  return SOS_COEFFS.map(c => new BiquadFilter(c[0], c[1], c[2], c[3], c[4]));
+  return SOS_COEFFS_HR.map(c => new BiquadFilter(c[0], c[1], c[2], c[3], c[4]));
 }
 
 export function applyFilterChain(signal: Float64Array, filters: BiquadFilter[]): Float64Array {
@@ -35,6 +35,12 @@ export function applyFilterChain(signal: Float64Array, filters: BiquadFilter[]):
     out[i] = v;
   }
   return out;
+}
+
+export function hanningWindow(n: number): Float64Array {
+  const w = new Float64Array(n);
+  for (let i = 0; i < n; i++) w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (n - 1)));
+  return w;
 }
 
 function bitReverse(n: number, bits: number): number {
@@ -89,28 +95,58 @@ export function nextPow2(n: number): number {
   return p;
 }
 
-export function computeHeartRate(
-  filtered: Float64Array, fs: number,
-  minFreq = 0.75, maxFreq = 2.75
-): { bpm: number; freqs: number[]; power: number[] } {
+function peakInterpolation(mag: Float64Array, peakIdx: number): number {
+  const y0 = mag[peakIdx - 1] || 0;
+  const y1 = mag[peakIdx];
+  const y2 = mag[peakIdx + 1] || 0;
+  const denom = y0 - 2 * y1 + y2;
+  if (Math.abs(denom) < 1e-12) return peakIdx;
+  return peakIdx + (y0 - y2) / (2 * denom);
+}
+
+export function computeHeartRate(filtered: Float64Array, fs: number): { bpm: number; freqs: number[]; power: number[]; snr: number } {
   const n = filtered.length;
   const fftLen = nextPow2(n);
+  const han = hanningWindow(n);
   const padded = new Float64Array(fftLen);
-  for (let i = 0; i < n; i++) padded[i] = filtered[i];
+  for (let i = 0; i < n; i++) padded[i] = filtered[i] * han[i];
+  const mag = fftMagnitude(padded);
+  const binSpacing = fs / fftLen;
+  let maxPower = 0;
+  let peakIdx = 0;
+  const freqs: number[] = [];
+  const power: number[] = [];
+  let totalPower = 0;
+  for (let i = 0; i < mag.length; i++) {
+    const f = i * binSpacing;
+    if (f < 0.75 || f > 2.75) continue;
+    freqs.push(f);
+    power.push(mag[i]);
+    totalPower += mag[i];
+    if (mag[i] > maxPower) { maxPower = mag[i]; peakIdx = i; }
+  }
+  const interpIdx = peakInterpolation(mag, peakIdx);
+  const peakFreq = interpIdx * binSpacing;
+  const snr = totalPower > 0 ? maxPower / (totalPower / power.length) : 0;
+  return { bpm: peakFreq * 60, freqs, power, snr };
+}
+
+export function computeRespirationRate(avgIntensity: Float64Array, fs: number): number {
+  const n = avgIntensity.length;
+  const fftLen = nextPow2(n);
+  const han = hanningWindow(n);
+  const padded = new Float64Array(fftLen);
+  for (let i = 0; i < n; i++) padded[i] = avgIntensity[i] * han[i];
   const mag = fftMagnitude(padded);
   const binSpacing = fs / fftLen;
   let maxPower = 0;
   let peakFreq = 0;
-  const freqs: number[] = [];
-  const power: number[] = [];
   for (let i = 0; i < mag.length; i++) {
     const f = i * binSpacing;
-    if (f < minFreq || f > maxFreq) continue;
-    freqs.push(f);
-    power.push(mag[i]);
+    if (f < 0.1 || f > 0.5) continue;
     if (mag[i] > maxPower) { maxPower = mag[i]; peakFreq = f; }
   }
-  return { bpm: peakFreq * 60, freqs, power };
+  return peakFreq * 60;
 }
 
 export function resample(signal: Float64Array, fromCount: number, toCount: number): Float64Array {
@@ -125,13 +161,6 @@ export function resample(signal: Float64Array, fromCount: number, toCount: numbe
   }
   return out;
 }
-
-const ROI_INDICES = [
-  10, 338, 297, 332, 284, 251, 389, 356,
-  50, 209, 198, 217, 206, 205, 36, 142,
-  280, 424, 434, 430, 426, 411, 281, 340,
-  6, 197, 195, 5, 4, 1,
-];
 
 export function computeSkinROI(
   landmarks: { x: number; y: number }[],
@@ -155,24 +184,6 @@ export function computeSkinROI(
     w: Math.min(imageWidth, maxX - minX + padX * 2),
     h: Math.min(imageHeight, maxY - minY + padY * 2),
   };
-}
-
-export function extractGreenChannel(imageData: ImageData, roi: { x: number; y: number; w: number; h: number }): number {
-  const data = imageData.data;
-  const startX = Math.floor(roi.x);
-  const startY = Math.floor(roi.y);
-  const endX = Math.min(Math.floor(roi.x + roi.w), imageData.width);
-  const endY = Math.min(Math.floor(roi.y + roi.h), imageData.height);
-  let sum = 0;
-  let count = 0;
-  for (let y = startY; y < endY; y++) {
-    const row = y * imageData.width;
-    for (let x = startX; x < endX; x++) {
-      sum += data[(row + x) * 4 + 1];
-      count++;
-    }
-  }
-  return count > 0 ? sum / count : 0;
 }
 
 export function extractRGB(imageData: ImageData, roi: { x: number; y: number; w: number; h: number }): { r: number; g: number; b: number } {
@@ -200,6 +211,9 @@ export function posProject(r: Float64Array, g: Float64Array, b: Float64Array): F
   const meanR = r.reduce((a, v) => a + v, 0) / n;
   const meanG = g.reduce((a, v) => a + v, 0) / n;
   const meanB = b.reduce((a, v) => a + v, 0) / n;
+  if (meanR < 1 || meanG < 1 || meanB < 1) {
+    return new Float64Array(n);
+  }
   const nr = new Float64Array(n);
   const ng = new Float64Array(n);
   const nb = new Float64Array(n);
@@ -239,3 +253,16 @@ export class SignalBuffer {
     return out;
   }
 }
+
+export const FACE_MESH_CONNECTIONS: number[][] = [
+  [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10],
+  [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246, 33],
+  [263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466, 263],
+  [46, 53, 52, 65, 55, 70, 63, 105, 66, 107],
+  [276, 283, 282, 295, 285, 300, 293, 334, 296, 336],
+  [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185, 61],
+  [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 78],
+  [168, 6, 197, 195, 5, 4, 1, 19, 94, 2],
+  [474, 475, 476, 477],
+  [469, 470, 471, 472],
+];
