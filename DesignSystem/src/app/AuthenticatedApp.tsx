@@ -35,7 +35,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
   const [unlockedPages, setUnlockedPages] = useState<Set<PageKey>>(new Set(['intake', 'labvanced']));
   const [completedPages, setCompletedPages] = useState<Set<PageKey>>(new Set());
 
-  const backend = useWebSocket();
+  const { state: backend, faceLandmarksRef } = useWebSocket();
 
   const handleUnlockNavigation = () => {
     setUnlockedPages(new Set(['intake', 'biometric', 'triage', 'enterprise', 'labvanced']));
@@ -226,6 +226,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
                     targetStatus={backend.targetStatus}
                     streamUrl={backend.streamUrl}
                     cameraStream={backend.cameraStream}
+                    faceLandmarksRef={faceLandmarksRef}
                   />
                 )}
                 {currentPage === 'biometric' && (

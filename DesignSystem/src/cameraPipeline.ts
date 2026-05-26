@@ -89,7 +89,10 @@ export function nextPow2(n: number): number {
   return p;
 }
 
-export function computeHeartRate(filtered: Float64Array, fs: number): { bpm: number; freqs: number[]; power: number[] } {
+export function computeHeartRate(
+  filtered: Float64Array, fs: number,
+  minFreq = 0.75, maxFreq = 2.75
+): { bpm: number; freqs: number[]; power: number[] } {
   const n = filtered.length;
   const fftLen = nextPow2(n);
   const padded = new Float64Array(fftLen);
@@ -102,7 +105,7 @@ export function computeHeartRate(filtered: Float64Array, fs: number): { bpm: num
   const power: number[] = [];
   for (let i = 0; i < mag.length; i++) {
     const f = i * binSpacing;
-    if (f < 0.75 || f > 2.75) continue;
+    if (f < minFreq || f > maxFreq) continue;
     freqs.push(f);
     power.push(mag[i]);
     if (mag[i] > maxPower) { maxPower = mag[i]; peakFreq = f; }

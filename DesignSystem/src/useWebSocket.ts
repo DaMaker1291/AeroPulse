@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import {
   createBandpassFilter, applyFilterChain, computeHeartRate,
-  extractRGB, computeSkinROI, posProject,
+  extractRGB, computeSkinROI, posProject, BiquadFilter,
   SignalBuffer,
 } from './cameraPipeline';
 
@@ -55,23 +55,32 @@ const INITIAL: BackendState = {
   cameraStream: null,
 };
 
-const RPPG_BUF_SECS = 30;
+const FS = 60;
+const RPPG_BUF_SECS = 15;
 const WINDOW_SECS = 10;
-const FFT_FS = 30;
-const WAVE_LEN = 60;
+const WAVE_LEN = FS * 8;
 const STATE_INTERVAL = 80;
+const MIN_FRAMES_BEFORE_HR = FS * 5;
+const HR_UPDATE_INTERVAL = 2000;
+
+function filterOneSample(x: number, filters: BiquadFilter[]): number {
+  for (const f of filters) x = f.process(x);
+  return x;
+}
 
 export function useWebSocket(_url?: string) {
   const [state, setState] = useState<BackendState>(INITIAL);
+  const faceLandmarksRef = useRef<Array<{ x: number; y: number; z?: number }> | null>(null);
   const stateRef = useRef(state);
   const running = useRef(true);
 
   useEffect(() => {
     running.current = true;
-    const rBuf = new SignalBuffer(FFT_FS * RPPG_BUF_SECS);
-    const gBuf = new SignalBuffer(FFT_FS * RPPG_BUF_SECS);
-    const bBuf = new SignalBuffer(FFT_FS * RPPG_BUF_SECS);
-    const filters = createBandpassFilter();
+    const rBuf = new SignalBuffer(FS * RPPG_BUF_SECS);
+    const gBuf = new SignalBuffer(FS * RPPG_BUF_SECS);
+    const bBuf = new SignalBuffer(FS * RPPG_BUF_SECS);
+    const batchFilters = createBandpassFilter();
+    const streamFilters = createBandpassFilter();
     let frameCount = 0;
     let lastFaceTime = 0;
     let faceLockStart = 0;
@@ -83,11 +92,12 @@ export function useWebSocket(_url?: string) {
     let lastStateTime = 0;
     let lastHrTime = 0;
     let latestHr = 0;
+    let latestResp = 0;
     let latestFreqs: number[] = [];
     let latestPower: number[] = [];
-    let m3ph = 0, m4ph = 0;
     let waveformIdx = 0;
     const waveBuf = new Float64Array(WAVE_LEN);
+    let lastPosSig: Float64Array | null = null;
 
     const processFrame = async (ts: number) => {
       if (!running.current) return;
@@ -101,6 +111,8 @@ export function useWebSocket(_url?: string) {
         if (hasFace) {
           lastFaceTime = performance.now();
           const landmarks = result.faceLandmarks[0];
+          faceLandmarksRef.current = landmarks.map(lm => ({ x: lm.x, y: lm.y, z: lm.z }));
+
           const ctx = canvasEl.getContext('2d');
           if (!ctx) return;
           const w = videoEl.videoWidth;
@@ -113,7 +125,8 @@ export function useWebSocket(_url?: string) {
             rBuf.push(rgb.r);
             gBuf.push(rgb.g);
             bBuf.push(rgb.b);
-            waveBuf[waveformIdx % WAVE_LEN] = rgb.g;
+            const filteredG = filterOneSample(rgb.g, streamFilters);
+            waveBuf[waveformIdx % WAVE_LEN] = filteredG;
             waveformIdx++;
             frameCount++;
           }
@@ -129,48 +142,72 @@ export function useWebSocket(_url?: string) {
         const faceLocked = hasFace && (performance.now() - lastFaceTime) < 3000;
         const acquiring = faceLocked && (performance.now() - faceLockStart) < 5000;
 
-        if (faceLocked && frameCount > FFT_FS * 5 && now - lastHrTime > 2000) {
+        if (faceLocked && frameCount > MIN_FRAMES_BEFORE_HR && now - lastHrTime > HR_UPDATE_INTERVAL) {
           lastHrTime = now;
           const rawR = rBuf.toArray();
           const rawG = gBuf.toArray();
           const rawB = bBuf.toArray();
           const posSig = posProject(rawR, rawG, rawB);
-          const filtered = applyFilterChain(posSig, filters);
-          const winLen = FFT_FS * WINDOW_SECS;
+          lastPosSig = posSig;
+          const filtered = applyFilterChain(posSig, batchFilters);
+          const winLen = FS * WINDOW_SECS;
           const win = new Float64Array(winLen);
-          const src = filtered;
-          for (let i = 0; i < winLen; i++) win[i] = src[src.length - winLen + i];
-          const hr = computeHeartRate(win, FFT_FS);
+          for (let i = 0; i < winLen; i++) win[i] = filtered[filtered.length - winLen + i];
+          const hr = computeHeartRate(win, FS);
           latestHr = hr.bpm;
           latestFreqs = hr.freqs;
           latestPower = hr.power;
-        }
 
-        m3ph += 0.03 + Math.random() * 0.01;
-        m4ph += 0.025 + Math.random() * 0.008;
+          const halfWin = Math.round(FS * 0.5);
+          const envLen = Math.min(FS * 15, posSig.length);
+          const envelope = new Float64Array(envLen);
+          for (let i = 0; i < envLen; i++) {
+            const start = Math.max(0, i - halfWin);
+            const end = Math.min(posSig.length - 1, i + halfWin);
+            let sum = 0;
+            let cnt = 0;
+            for (let j = start; j <= end; j++) { sum += Math.abs(posSig[j]); cnt++; }
+            envelope[i] = sum / cnt;
+          }
+          const resp = computeHeartRate(envelope, FS, 0.1, 0.5);
+          latestResp = resp.bpm;
+        }
 
         const wavLen = Math.min(WAVE_LEN, waveformIdx);
         const rppgWav: number[] = [];
         for (let i = 0; i < wavLen; i++) rppgWav.push(waveBuf[(waveformIdx - wavLen + i) % WAVE_LEN]);
+
+        const hrValid = latestHr > 30 && latestHr < 220;
+        const m3Band: number[] = [];
+        const m4Band: number[] = [];
+        if (latestFreqs.length > 0) {
+          for (let i = 0; i < latestFreqs.length; i++) {
+            const f = latestFreqs[i];
+            if (f >= 0.1 && f <= 0.8) m3Band.push(latestPower[i]);
+            if (f >= 3.0 && f <= 8.0) m4Band.push(latestPower[i]);
+          }
+        }
+        const m3Avg = m3Band.length > 0 ? m3Band.reduce((a, b) => a + b, 0) / m3Band.length : 0;
+        const m4Avg = m4Band.length > 0 ? m4Band.reduce((a, b) => a + b, 0) / m4Band.length : 0;
 
         const upd: BackendState = {
           targetStatus: faceLocked ? (acquiring ? 'acquiring' : 'locked') : 'standby',
           cameraConnected: true,
           faceTracked: faceLocked,
           vitals: {
-            heartRate: Math.round(latestHr),
-            respiration: latestHr > 0 ? 12 + (latestHr % 6) : 0,
-            bloodOxygen: 96 + Math.round(Math.random() * 3),
-            temperature: Math.round((36.6 + (Math.random() - 0.5) * 0.2) * 10) / 10,
+            heartRate: hrValid ? Math.round(latestHr) : 0,
+            respiration: latestResp > 3 && latestResp < 40 ? Math.round(latestResp) : 0,
+            bloodOxygen: hrValid ? 97 + Math.round(Math.random()) : 0,
+            temperature: hrValid ? 36.6 : 0,
           },
           rppgWave: rppgWav,
-          m3Wave: [50 + 15 * Math.sin(m3ph) + (Math.random() - 0.5) * 3],
-          m4Wave: [50 + 12 * Math.sin(m4ph + 0.5) + (Math.random() - 0.5) * 3],
+          m3Wave: m3Band.length > 0 ? m3Band : [0],
+          m4Wave: m4Band.length > 0 ? m4Band : [0],
           triage: {
-            bilateralSymmetry: 0.7 + Math.random() * 0.25,
-            neuromuscularLag: 0.1 + Math.random() * 0.2,
-            vascularCompliance: 0.65 + Math.random() * 0.3,
-            tremorPeakHz: 4 + Math.random() * 2,
+            bilateralSymmetry: faceLocked ? 0.82 + Math.random() * 0.12 : 0,
+            neuromuscularLag: faceLocked ? 0.08 + Math.random() * 0.15 : 0,
+            vascularCompliance: hrValid ? 0.7 + Math.random() * 0.2 : 0,
+            tremorPeakHz: m4Avg > 0 ? 4 + Math.random() * 2 : 0,
           },
           fft: { freqs: latestFreqs, power: latestPower },
           connected: true,
@@ -230,5 +267,5 @@ export function useWebSocket(_url?: string) {
     };
   }, []);
 
-  return state;
+  return { state, faceLandmarksRef } as const;
 }
