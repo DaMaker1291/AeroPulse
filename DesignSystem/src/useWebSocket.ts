@@ -179,7 +179,7 @@ export function useWebSocket(_url?: string) {
         };
         stateRef.current = upd;
         setState(upd);
-      } catch (_e) { /* frame skip */ }
+      } catch (e) { console.error('rPPG frame error:', e); }
     };
 
     (async () => {
@@ -199,7 +199,7 @@ export function useWebSocket(_url?: string) {
         cv.height = vid.videoHeight || 480;
 
         const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm/'
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm/'
         );
         faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
@@ -211,7 +211,8 @@ export function useWebSocket(_url?: string) {
         });
         setState(s => ({ ...s, cameraConnected: true, connected: true, streamUrl: 'camera', cameraStream: stream }));
         animId = requestAnimationFrame(processFrame);
-      } catch (_e) {
+      } catch (e) {
+        console.error('Camera init error:', e);
         setState(s => ({ ...s, cameraConnected: false, connected: false }));
       }
     })();

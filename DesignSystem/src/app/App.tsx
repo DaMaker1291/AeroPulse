@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Activity, Scan, Brain, Building2, Lock, LogOut, ChevronRight } from 'lucide-react';
+import { Activity, Scan, Brain, Building2, Heart, Lock, LogOut, ChevronRight } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { AccountCreation } from './components/AccountCreation';
 import { Page1AdaptiveIntake } from './components/Page1AdaptiveIntake';
 import { Page2Biometric } from './components/Page2Biometric';
 import { Page3Triage } from './components/Page3Triage';
 import { Page4Enterprise } from './components/Page4Enterprise';
+import { Page5Labvanced } from './components/Page5Labvanced';
 import { useWebSocket } from '../useWebSocket';
 
-type PageKey = 'intake' | 'biometric' | 'triage' | 'enterprise';
+type PageKey = 'intake' | 'biometric' | 'triage' | 'enterprise' | 'labvanced';
 
 interface UserData {
   name: string;
@@ -22,13 +23,14 @@ const pages = [
   { key: 'biometric' as PageKey, name: 'Biometric Scanner', step: '02', icon: Scan, desc: 'Multimodal Interrogation' },
   { key: 'triage' as PageKey, name: 'Predictive Triage', step: '03', icon: Brain, desc: 'FFT Risk Analysis' },
   { key: 'enterprise' as PageKey, name: 'Enterprise Fleet', step: '04', icon: Building2, desc: 'Audit Dashboard' },
+  { key: 'labvanced' as PageKey, name: 'LabVanced', step: '05', icon: Heart, desc: 'rPPG Technology' },
 ];
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<UserData | null>(null);
   const [currentPage, setCurrentPage] = useState<PageKey>('intake');
-  const [unlockedPages, setUnlockedPages] = useState<Set<PageKey>>(new Set(['intake']));
+  const [unlockedPages, setUnlockedPages] = useState<Set<PageKey>>(new Set(['intake', 'labvanced']));
   const [completedPages, setCompletedPages] = useState<Set<PageKey>>(new Set());
 
   const backend = useWebSocket();
@@ -39,7 +41,7 @@ export default function App() {
   };
 
   const handleUnlockNavigation = () => {
-    setUnlockedPages(new Set(['intake', 'biometric', 'triage', 'enterprise']));
+    setUnlockedPages(new Set(['intake', 'biometric', 'triage', 'enterprise', 'labvanced']));
     setCompletedPages(prev => new Set([...prev, 'intake']));
   };
 
@@ -51,8 +53,6 @@ export default function App() {
   const navigate = (key: PageKey) => {
     if (unlockedPages.has(key)) setCurrentPage(key);
   };
-
-  const ActivePageComponent = pages.find(p => p.key === currentPage)?.component;
 
   if (!authenticated) {
     return <AccountCreation onComplete={handleAuth} />;
@@ -252,6 +252,7 @@ export default function App() {
                   />
                 )}
                 {currentPage === 'enterprise' && <Page4Enterprise />}
+                {currentPage === 'labvanced' && <Page5Labvanced />}
               </motion.div>
             </AnimatePresence>
           </div>
