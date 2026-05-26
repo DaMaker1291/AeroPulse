@@ -95,13 +95,13 @@ export function nextPow2(n: number): number {
   return p;
 }
 
-function peakInterpolation(mag: Float64Array, peakIdx: number): number {
-  const y0 = mag[peakIdx - 1] || 0;
-  const y1 = mag[peakIdx];
-  const y2 = mag[peakIdx + 1] || 0;
-  const denom = y0 - 2 * y1 + y2;
+function gaussInterpolation(mag: Float64Array, peakIdx: number): number {
+  const y0 = Math.log(mag[peakIdx - 1] || 1e-30);
+  const y1 = Math.log(mag[peakIdx]);
+  const y2 = Math.log(mag[peakIdx + 1] || 1e-30);
+  const denom = 2 * (2 * y1 - y2 - y0);
   if (Math.abs(denom) < 1e-12) return peakIdx;
-  return peakIdx + (y0 - y2) / (2 * denom);
+  return peakIdx + (y0 - y2) / denom;
 }
 
 export interface HRResult {
@@ -111,11 +111,12 @@ export interface HRResult {
   snr: number;
   quality: number;
   peakProminence: number;
+  harmonicRatio: number;
 }
 
 export function computeHeartRate(filtered: Float64Array, fs: number): HRResult {
   const n = filtered.length;
-  const fftLen = nextPow2(n * 2); // 2× zero-padding for better interpolation
+  const fftLen = nextPow2(n * 4); // 4× zero-padding for finer interpolation
   const han = hanningWindow(n);
   const padded = new Float64Array(fftLen);
   for (let i = 0; i < n; i++) padded[i] = filtered[i] * han[i];
@@ -131,7 +132,6 @@ export function computeHeartRate(filtered: Float64Array, fs: number): HRResult {
   for (let i = 0; i < mag.length; i++) {
     const f = i * binSpacing;
     if (f < 0.75 || f > 2.75) continue;
-    const idx = freqs.length;
     freqs.push(f);
     power.push(mag[i]);
     totalPower += mag[i];
@@ -143,9 +143,9 @@ export function computeHeartRate(filtered: Float64Array, fs: number): HRResult {
       secondMaxPower = mag[i];
     }
   }
-  meanPower = totalPower / Math.max(power.length, 1);
+  meanPower = totalPower / Math.max(freqs.length, 1);
 
-  const interpIdx = peakInterpolation(mag, peakIdx);
+  const interpIdx = gaussInterpolation(mag, peakIdx);
   const peakFreq = interpIdx * binSpacing;
   const snr = meanPower > 0 ? maxPower / Math.max(meanPower, 1e-30) : 0;
 
@@ -154,12 +154,28 @@ export function computeHeartRate(filtered: Float64Array, fs: number): HRResult {
     ? (maxPower - secondMaxPower) / maxPower
     : 0;
 
+  // Harmonic ratio: power at 2× fundamental vs fundamental peak
+  const harmonicFreq = peakFreq * 2;
+  let harmonicPower = 0;
+  for (let i = 0; i < freqs.length; i++) {
+    if (Math.abs(freqs[i] - harmonicFreq) < binSpacing * 2 && power[i] > harmonicPower) {
+      harmonicPower = power[i];
+    }
+  }
+  const harmonicRatio = maxPower > 0
+    ? Math.min(1, harmonicPower / Math.max(maxPower, 1e-30))
+    : 0;
+
   // Composite quality score (0-1)
   const snrNorm = Math.min(1, Math.max(0, (snr - 1.5) / 5.0));
   const promNorm = Math.min(1, Math.max(0, peakProminence * 2));
-  const quality = 0.6 * snrNorm + 0.4 * promNorm;
+  const harmNorm = Math.min(1, harmonicRatio * 3);
+  const quality = 0.45 * snrNorm + 0.3 * promNorm + 0.25 * harmNorm;
 
-  return { bpm: peakFreq * 60, freqs, power, snr, quality, peakProminence };
+  return {
+    bpm: peakFreq * 60, freqs, power, snr, quality,
+    peakProminence, harmonicRatio,
+  };
 }
 
 export function computeHRQuality(
@@ -173,6 +189,9 @@ export function computeHRQuality(
 
   // Peak prominence factor (0-1)
   const promScore = Math.min(1, Math.max(0, hrResult.peakProminence * 2));
+
+  // Harmonic ratio factor: strong 2nd harmonic = cleaner pulse
+  const harmScore = Math.min(1, hrResult.harmonicRatio * 3);
 
   // HR range factor: penalize extreme values
   const hrScore = hrBpm >= 55 && hrBpm <= 110 ? 1.0
@@ -188,7 +207,7 @@ export function computeHRQuality(
   const ampMean = ampSum / signal.length;
   const ampScore = Math.min(1, ampMean * 10);
 
-  return 0.35 * snrScore + 0.20 * promScore + 0.15 * hrScore + 0.20 * motionFactor + 0.10 * ampScore;
+  return 0.30 * snrScore + 0.15 * promScore + 0.20 * harmScore + 0.15 * hrScore + 0.15 * motionFactor + 0.05 * ampScore;
 }
 
 export function adaptiveNoiseCancel(

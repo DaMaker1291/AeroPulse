@@ -300,8 +300,10 @@ export function useWebSocket(_url?: string) {
             lastHrQuality = signalQuality;
 
             if (hrStabilityCount >= HR_STABILITY_REQUIRED) {
-              // Adaptive EMA: use slower smoothing when quality is marginal, faster when good
-              const adaptiveAlpha = HR_EMA_ALPHA * (0.5 + 0.5 * signalQuality);
+              // Adaptive EMA: quality-based + decay over time for smoother lock
+              const trackingTime = (now - faceLockStart) / 1000;
+              const decay = Math.max(0.4, 1.0 - trackingTime * 0.005); // decays from 1.0 → 0.4 over 120s
+              const adaptiveAlpha = HR_EMA_ALPHA * (0.4 + 0.6 * signalQuality) * decay;
 
               if (smoothedHr === 0) {
                 smoothedHr = hr.bpm;
