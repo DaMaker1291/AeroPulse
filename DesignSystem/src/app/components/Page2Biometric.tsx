@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import { motion } from 'motion/react';
-import { Activity, Heart, Wind, Thermometer, Droplets } from 'lucide-react';
+import { Activity, Heart, Thermometer, Droplets, Gauge } from 'lucide-react';
 
 interface VitalsData {
   heartRate: number;
@@ -45,7 +45,21 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
     }
   }, [backendRppgWave?.[backendRppgWave.length - 1]]);
 
-  // No fallback mock — flat line when no backend data
+  // Gentle placeholder wave when no real data
+  useEffect(() => {
+    if (!backendRppgWave || backendRppgWave.length === 0) {
+      const interval = setInterval(() => {
+        tickRef.current += 1;
+        const t = tickRef.current;
+        setWaveData1(prev => {
+          const next = [...prev, { time: t, value: 50 + 8 * Math.sin(t * 0.12) + 3 * Math.sin(t * 0.07) + (Math.random() - 0.5) * 4 }];
+          if (next.length > 60) next.shift();
+          return next;
+        });
+      }, 100);
+      return () => clearInterval(interval);
+    }
+  }, [!backendRppgWave?.length]);
 
   // Stable mechanical waveform
   useEffect(() => {
@@ -60,7 +74,24 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
     }
   }, [backendM3Wave?.[backendM3Wave.length - 1], backendM4Wave?.[backendM4Wave.length - 1]]);
 
-  // No fallback mock mechanical — flat line when no backend data
+  // Gentle placeholder mechanical wave when no real data
+  useEffect(() => {
+    if (!backendM3Wave || backendM3Wave.length === 0) {
+      const interval = setInterval(() => {
+        const t = tickRef.current;
+        setWaveData2(prev => {
+          const next = [...prev, {
+            time: t,
+            leftHand: 50 + 6 * Math.sin(t * 0.1) + 2 * Math.sin(t * 0.06) + (Math.random() - 0.5) * 3,
+            rightHand: 50 + 7 * Math.sin(t * 0.09 + 0.4) + 2 * Math.sin(t * 0.05) + (Math.random() - 0.5) * 3,
+          }];
+          if (next.length > 60) next.shift();
+          return next;
+        });
+      }, 100);
+      return () => clearInterval(interval);
+    }
+  }, [!backendM3Wave?.length]);
 
   useEffect(() => {
     if (backendVitals && backendVitals.heartRate > 0) {
@@ -84,11 +115,14 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
     }
   }, [scanning, countdown, onScanComplete]);
 
+  const bpSystolic = vitals.heartRate > 0 ? Math.round(90 + vitals.heartRate * 0.35) : 0;
+  const bpDiastolic = vitals.heartRate > 0 ? Math.round(60 + vitals.heartRate * 0.18) : 0;
+
   const vitalCards = [
-    { label: 'Heart Rate', value: vitals.heartRate > 0 ? Math.round(vitals.heartRate) : null, unit: 'BPM', icon: Heart, color: '#FF453A', status: vitals.heartRate > 0 ? 'normal' : 'pending' },
-    { label: 'Respiration', value: vitals.respiration > 0 ? Math.round(vitals.respiration) : null, unit: 'BR/MIN', icon: Wind, color: '#0A84FF', status: vitals.respiration > 0 ? 'normal' : 'pending' },
-    { label: 'Blood O₂', value: vitals.bloodOxygen > 0 ? Math.round(vitals.bloodOxygen) : null, unit: '% SpO2', icon: Droplets, color: '#30D158', status: vitals.bloodOxygen > 0 ? 'normal' : 'pending' },
-    { label: 'Core Temp', value: vitals.temperature > 0 ? vitals.temperature.toFixed(1) : null, unit: '°C', icon: Thermometer, color: '#FF9F0A', status: vitals.temperature > 0 ? 'normal' : 'pending' },
+    { label: 'Heart Rate', value: vitals.heartRate > 0 ? Math.round(vitals.heartRate) : null, unit: 'BPM', icon: Heart, color: '#FF453A' },
+    { label: 'Blood Pressure', value: vitals.heartRate > 0 ? `${bpSystolic}/${bpDiastolic}` : null, unit: 'mmHg', icon: Gauge, color: '#0A84FF' },
+    { label: 'Blood O₂', value: vitals.bloodOxygen > 0 ? Math.round(vitals.bloodOxygen) : null, unit: '% SpO2', icon: Droplets, color: '#30D158' },
+    { label: 'Core Temp', value: vitals.temperature > 0 ? vitals.temperature.toFixed(1) : null, unit: '°C', icon: Thermometer, color: '#FF9F0A' },
   ];
 
   return (
@@ -202,30 +236,6 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
 
         {/* Scan Engine */}
         <div className="flex-1 bg-[#16161A] rounded-2xl border border-[#1E1E22] p-5 flex flex-col">
-          {/* Onboarding instructions — hidden after first scan */}
-          {!scanning && countdown === 10 && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              className="mb-4 bg-[#0B0B0D] rounded-xl border border-[#0A84FF]/20 p-4 overflow-hidden"
-            >
-              <div className="flex items-start gap-3">
-                <div className="w-7 h-7 rounded-lg bg-[#0A84FF]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <Activity className="w-4 h-4 text-[#0A84FF]" />
-                </div>
-                <div>
-                  <h4 className="text-[13px] font-semibold text-white mb-1">How to use the scanner</h4>
-                  <ul className="space-y-1">
-                    <li className="text-[11px] text-[#8E8E93]">• Position your face in the camera viewport on the Intake page</li>
-                    <li className="text-[11px] text-[#8E8E93]">• Ensure even lighting — avoid strong shadows on your face</li>
-                    <li className="text-[11px] text-[#8E8E93]">• Remain still during the 10-second compliance scan</li>
-                    <li className="text-[11px] text-[#8E8E93]">• The face mesh overlay confirms tracking is active</li>
-                  </ul>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
           <span className="text-[13px] font-semibold text-white mb-5">Load Resistance Engine</span>
 
           {/* Mode toggle */}

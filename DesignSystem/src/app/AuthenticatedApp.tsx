@@ -36,6 +36,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
   const [currentPage, setCurrentPage] = useState<PageKey>('intake');
   const [unlockedPages, setUnlockedPages] = useState<Set<PageKey>>(new Set(['intake', 'labvanced', 'onboarding']));
   const [completedPages, setCompletedPages] = useState<Set<PageKey>>(new Set());
+  const [patientInfo, setPatientInfo] = useState({ reasonForVisit: '', age: '', gender: '' });
 
   const backend = useWebSocket();
 
@@ -229,6 +230,8 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
                     streamUrl={backend.streamUrl}
                     cameraStream={backend.cameraStream}
                     faceMesh={backend.faceMesh}
+                    onPatientInfo={setPatientInfo}
+                    patientInfo={patientInfo}
                   />
                 )}
                 {currentPage === 'biometric' && (
@@ -246,7 +249,9 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
                     backendTriage={backend.triage}
                     backendFft={backend.fft}
                     backendVitals={backend.vitals}
-                    reasonForVisit={user?.reasonForVisit || ''}
+                    reasonForVisit={patientInfo.reasonForVisit}
+                    patientAge={patientInfo.age}
+                    patientGender={patientInfo.gender}
                   />
                 )}
                 {currentPage === 'enterprise' && (

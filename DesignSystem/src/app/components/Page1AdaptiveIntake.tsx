@@ -3,12 +3,20 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Brain, ChevronRight } from 'lucide-react';
 import { FACE_MESH_CONNECTIONS } from '../../cameraPipeline';
 
+interface PatientInfo {
+  reasonForVisit: string;
+  age: string;
+  gender: string;
+}
+
 interface Page1Props {
   onUnlockNavigation: () => void;
   targetStatus?: 'locked' | 'acquiring' | 'standby';
   streamUrl?: string;
   cameraStream?: MediaStream | null;
   faceMesh?: number[] | null;
+  onPatientInfo?: (info: PatientInfo) => void;
+  patientInfo?: PatientInfo;
 }
 
 const questions = [
@@ -24,13 +32,17 @@ const MESH_COLOR = '#30D158';
 const MESH_LINE_WIDTH = 1.5;
 const MESH_DOT_RADIUS = 2;
 
-export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTargetStatus, streamUrl, cameraStream, faceMesh }: Page1Props) {
+export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTargetStatus, streamUrl, cameraStream, faceMesh, onPatientInfo, patientInfo }: Page1Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const meshRef = useRef<number[] | null>(null);
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
   const [targetStatus, setTargetStatus] = useState<'acquiring' | 'locked' | 'standby'>(propTargetStatus ?? 'standby');
+  const [localReason, setLocalReason] = useState(patientInfo?.reasonForVisit || '');
+  const [localAge, setLocalAge] = useState(patientInfo?.age || '');
+  const [localGender, setLocalGender] = useState(patientInfo?.gender || '');
+  const [showPatientForm, setShowPatientForm] = useState(true);
   const [panValue, setPanValue] = useState(50);
   const [tiltValue, setTiltValue] = useState(50);
   const [aiConfidence, setAiConfidence] = useState(0.74);
@@ -183,6 +195,54 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
             <span className="text-[22px] font-bold text-white font-mono leading-none ml-1">{aiConfidence.toFixed(2)}</span>
           </div>
         </div>
+
+        {/* Patient info form */}
+        {showPatientForm && (
+          <div className="px-6 pt-4 pb-3 border-b border-[#1E1E22]">
+            <div className="grid grid-cols-3 gap-3 mb-3">
+              <div>
+                <label className="block text-[9px] text-[#8E8E93] tracking-widest uppercase font-medium mb-1.5">Age</label>
+                <input
+                  type="number" min={0} max={130} placeholder="e.g. 45"
+                  value={localAge}
+                  onChange={e => { setLocalAge(e.target.value); onPatientInfo?.({ reasonForVisit: localReason, age: e.target.value, gender: localGender }); }}
+                  className="w-full h-9 bg-[#0B0B0D] border border-[#2C2C2E] rounded-lg px-3 text-white text-[13px] focus:outline-none focus:border-[#0A84FF] transition-all placeholder:text-[#8E8E93]/40"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] text-[#8E8E93] tracking-widest uppercase font-medium mb-1.5">Gender</label>
+                <select
+                  value={localGender}
+                  onChange={e => { setLocalGender(e.target.value); onPatientInfo?.({ reasonForVisit: localReason, age: localAge, gender: e.target.value }); }}
+                  className="w-full h-9 bg-[#0B0B0D] border border-[#2C2C2E] rounded-lg px-3 text-white text-[13px] focus:outline-none focus:border-[#0A84FF] transition-all appearance-none"
+                >
+                  <option value="">Select</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={() => setShowPatientForm(false)}
+                  className="h-9 px-3 rounded-lg bg-[#0A84FF]/10 border border-[#0A84FF]/20 text-[#0A84FF] text-[11px] font-semibold hover:bg-[#0A84FF]/20 transition-colors"
+                >
+                  Done ✓
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[9px] text-[#8E8E93] tracking-widest uppercase font-medium mb-1.5">Reason for Visit</label>
+              <textarea
+                placeholder="e.g., Chest pain, shortness of breath, routine screening..."
+                value={localReason}
+                onChange={e => { setLocalReason(e.target.value); onPatientInfo?.({ reasonForVisit: e.target.value, age: localAge, gender: localGender }); }}
+                rows={2}
+                className="w-full bg-[#0B0B0D] border border-[#2C2C2E] rounded-lg px-3 py-2 text-white text-[13px] focus:outline-none focus:border-[#0A84FF] transition-all placeholder:text-[#8E8E93]/40 resize-none"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Progress bar */}
         <div className="h-0.5 bg-[#1E1E22]">

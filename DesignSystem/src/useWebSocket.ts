@@ -91,6 +91,7 @@ export function useWebSocket(_url?: string) {
     let latestFreqs: number[] = [];
     let latestPower: number[] = [];
     let waveformIdx = 0;
+    let filteredWavePrev = 0;
     const waveBuf = new Float64Array(WAVE_LEN);
     const posBuf = new Float64Array(WAVE_LEN);
     let posWfIdx = 0;
@@ -200,11 +201,16 @@ export function useWebSocket(_url?: string) {
         const neuroLag = 50 - sigQual * 40;
         const tremorHz = 3 + sigQual * 4 + (Math.random() - 0.5) * 0.5;
 
-        // Build rPPG wave from filtered POS
-        const wavLen = Math.min(WAVE_LEN, posWfIdx);
+        // Build rPPG wave from live intensity buffer (updated every frame)
+        const wavLen = Math.min(WAVE_LEN, waveformIdx);
         const rppgWav: number[] = [];
-        for (let i = 0; i < wavLen; i++) {
-          rppgWav.push(posBuf[(posWfIdx - wavLen + i) % WAVE_LEN]);
+        if (wavLen > 0) {
+          const buf = waveBuf;
+          const idx = waveformIdx;
+          const mean = buf.reduce((s, v, i) => i < wavLen ? s + v : s, 0) / wavLen;
+          for (let i = 0; i < wavLen; i++) {
+            rppgWav.push(buf[(idx - wavLen + i) % WAVE_LEN] - mean);
+          }
         }
 
         const m3Val = Math.sin(posWfIdx * 0.1) * sigQual * 20 + 50;

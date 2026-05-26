@@ -28,9 +28,13 @@ interface Page3Props {
   backendFft?: FftData;
   backendVitals?: VitalsData;
   reasonForVisit?: string;
+  patientAge?: string;
+  patientGender?: string;
 }
 
-function generateDiagnosis(vitals: VitalsData, triage: TriageData | undefined, reason: string): string[] {
+const DISCLAIMER = 'DISCLAIMER: This is an AI-generated hypothesis based on limited rPPG data. It is NOT a medical diagnosis. All findings must be confirmed by a qualified healthcare professional through appropriate clinical testing.';
+
+function generateDiagnosis(vitals: VitalsData, triage: TriageData | undefined, reason: string, age: string, gender: string): string[] {
   const lines: string[] = [];
   const hr = vitals.heartRate;
   const rr = vitals.respiration;
@@ -46,8 +50,8 @@ function generateDiagnosis(vitals: VitalsData, triage: TriageData | undefined, r
 
   // Respiration interpretation
   if (rr > 0) {
-    if (rr < 12) lines.push(`Bradypnea (${rr} Br/min). Possible opioid effect, metabolic alkalosis, or CNS depression.`);
-    else if (rr > 20) lines.push(`Tachypnea (${rr} Br/min). Could indicate pneumonia, pulmonary embolism, metabolic acidosis, or anxiety.`);
+    if (rr < 12) lines.push(`Low-normal respiratory rate (${rr} Br/min). Common in well-conditioned individuals or during rest. If the patient reports shortness of breath despite a low rate, consider further assessment.`);
+    else if (rr > 20) lines.push(`Slightly elevated respiratory rate (${rr} Br/min). May reflect anxiety, mild discomfort, or environmental factors. If persistent, consider further evaluation.`);
     else lines.push(`Respiratory rate normal (${rr} Br/min). Adequate ventilation.`);
   }
 
@@ -58,12 +62,12 @@ function generateDiagnosis(vitals: VitalsData, triage: TriageData | undefined, r
     const comp = triage.vascularCompliance;
     const tremor = triage.tremorPeakHz;
 
-    if (sym < 70) lines.push(`Bilateral asymmetry (${sym}%). Motor deficit suspected. Consider cortical stroke, peripheral nerve injury, or unilateral musculoskeletal pathology.`);
-    else if (sym < 85) lines.push(`Mild bilateral asymmetry (${sym}%). Subclinical motor variance. May be normal or early neurodegenerative change.`);
+    if (sym < 70) lines.push(`Bilateral asymmetry detected (${sym}%). This may be normal variation or related to hand dominance. If the patient reports unilateral weakness or numbness, further neurological assessment is recommended.`);
+    else if (sym < 85) lines.push(`Mild asymmetry (${sym}%). Within expected range for most individuals. Slight differences between dominant and non-dominant sides are normal.`);
     else lines.push(`Bilateral symmetry normal (${sym}%). No motor asymmetry detected.`);
 
-    if (lag > 80) lines.push(`Elevated neuromuscular lag (${lag} ms). Delayed conduction suggests possible neuropathy, radiculopathy, or upper motor neuron lesion.`);
-    else if (lag > 50) lines.push(`Slightly elevated neuromuscular lag (${lag} ms). Borderline conduction velocity. May warrant follow-up.`);
+    if (lag > 80) lines.push(`Neuromuscular response time elevated (${lag} ms). May be normal variation or related to fatigue. If asymmetrical or accompanied by weakness, further evaluation may be warranted.`);
+    else if (lag > 50) lines.push(`Neuromuscular response time slightly above average (${lag} ms). Usually within normal variation for age and activity level.`);
     else lines.push(`Neuromuscular conduction normal (${lag} ms). No significant delay.`);
 
     if (comp < 60) lines.push(`Reduced vascular compliance (${comp}%). Arterial stiffening pattern. Associated with aging, hypertension, and elevated cardiovascular risk.`);
@@ -126,7 +130,7 @@ function generateDiagnosis(vitals: VitalsData, triage: TriageData | undefined, r
   return lines;
 }
 
-export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonForVisit }: Page3Props) {
+export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonForVisit, patientAge, patientGender }: Page3Props) {
   const hasData = backendVitals?.heartRate && backendVitals.heartRate > 0;
 
   const hasPsdData = backendFft?.freqs?.length && backendFft?.power?.length;
@@ -144,9 +148,11 @@ export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonFo
     return generateDiagnosis(
       backendVitals!,
       backendTriage,
-      reasonForVisit || ''
+      reasonForVisit || '',
+      patientAge || '',
+      patientGender || ''
     );
-  }, [backendVitals, backendTriage, reasonForVisit, hasData]);
+  }, [backendVitals, backendTriage, reasonForVisit, patientAge, patientGender, hasData]);
 
   const alertLevel = psdData.some(d => d.freq >= 8 && d.freq <= 12 && d.amplitude > 50) ? 'elevated' : 'normal';
 
@@ -224,6 +230,12 @@ export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonFo
               Reason: {reasonForVisit.length > 40 ? reasonForVisit.slice(0, 40) + '…' : reasonForVisit}
             </span>
           )}
+        </div>
+
+        <div className="bg-[#FF9F0A]/5 border border-[#FF9F0A]/20 rounded-xl px-4 py-3 mb-3">
+          <p className="text-[11px] text-[#FF9F0A] leading-relaxed">
+            ⚠ {DISCLAIMER}
+          </p>
         </div>
 
         {diagnosis.length > 0 ? (
