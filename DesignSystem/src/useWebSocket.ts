@@ -61,7 +61,7 @@ const WINDOW_SECS = 10;
 const FFT_FS = 60;
 const STATE_INTERVAL = 80;
 const WAVE_LEN = 60;
-const HR_EMA_ALPHA = 0.35;
+const HR_EMA_ALPHA = 0.6;
 const PROC_W = 320;
 const PROC_H = 240;
 
@@ -218,8 +218,8 @@ export function useWebSocket(_url?: string) {
         const faceLocked = (performance.now() - lastFaceTime) < 3000;
         const acquiring = faceLocked && (faceLockStart > 0 && (performance.now() - faceLockStart) < 4000);
 
-        // Heart rate every 2 seconds, minimum 10s of data
-        if (faceLocked && frameCount > FFT_FS * 5 && now - lastHrTime > 2000) {
+        // Heart rate every 1 second, minimum 5s of data
+        if (faceLocked && frameCount > FFT_FS * 5 && now - lastHrTime > 1000) {
           lastHrTime = now;
           const rawR = rBuf.toArray();
           const rawG = gBuf.toArray();
