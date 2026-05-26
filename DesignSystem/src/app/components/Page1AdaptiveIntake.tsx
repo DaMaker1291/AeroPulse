@@ -177,7 +177,7 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
   const isMobile = useIsMobile();
 
   return (
-    <div className={`${isMobile ? 'flex flex-col gap-3' : 'flex gap-4 h-full'}`}>
+    <div className={`${isMobile ? 'flex flex-col gap-3' : 'flex gap-4'}`}>
 
       {/* AI Clinical Screener */}
       <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] flex flex-col overflow-y-auto ${isMobile ? 'flex-shrink-0' : 'flex-1'}`}>

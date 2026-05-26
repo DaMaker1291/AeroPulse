@@ -205,7 +205,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.18, ease: 'easeOut' }}
-          className={isMobile ? '' : 'min-h-0 flex-1'}
+          className={isMobile ? '' : (currentPage === 'intake' ? 'min-h-0' : 'min-h-0 flex-1')}
         >
           {currentPage === 'intake' && (
             <Page1AdaptiveIntake
