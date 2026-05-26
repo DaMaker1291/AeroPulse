@@ -62,6 +62,8 @@ const FFT_FS = 60;
 const STATE_INTERVAL = 80;
 const WAVE_LEN = 60;
 const HR_EMA_ALPHA = 0.35;
+const PROC_W = 320;
+const PROC_H = 240;
 
 export function useWebSocket(_url?: string) {
   const [state, setState] = useState<BackendState>(INITIAL);
@@ -122,10 +124,8 @@ export function useWebSocket(_url?: string) {
       try {
         const ctx = canvasEl.getContext('2d');
         if (!ctx) return;
-        const w = videoEl.videoWidth || 640;
-        const h = videoEl.videoHeight || 480;
-        ctx.drawImage(videoEl, 0, 0, w, h);
-        const imgData = ctx.getImageData(0, 0, w, h);
+        ctx.drawImage(videoEl, 0, 0, PROC_W, PROC_H);
+        const imgData = ctx.getImageData(0, 0, PROC_W, PROC_H);
 
         let hasFace = false;
         let landmarks: { x: number; y: number }[] | null = null;
@@ -143,7 +143,7 @@ export function useWebSocket(_url?: string) {
         // Extract ROI: from face landmarks if available, otherwise center crop
         let roi: { x: number; y: number; w: number; h: number } | null = null;
         if (landmarks) {
-          roi = computeSkinROI(landmarks, w, h);
+          roi = computeSkinROI(landmarks, PROC_W, PROC_H);
           lastFaceTime = performance.now();
           if (faceLockStart === 0) faceLockStart = performance.now();
 
@@ -182,9 +182,9 @@ export function useWebSocket(_url?: string) {
           latestMesh = flat;
         } else {
           // No face detected — use center crop as fallback for signal extraction
-          const cropW = w * 0.4;
-          const cropH = h * 0.4;
-          roi = { x: (w - cropW) / 2, y: (h - cropH) / 2, w: cropW, h: cropH };
+          const cropW = PROC_W * 0.4;
+          const cropH = PROC_H * 0.4;
+          roi = { x: (PROC_W - cropW) / 2, y: (PROC_H - cropH) / 2, w: cropW, h: cropH };
           if (!faceLandmarker) {
             // MediaPipe not available: treat as face-locked for signal pipeline
             if (faceLockStart === 0) faceLockStart = performance.now();
@@ -353,8 +353,8 @@ export function useWebSocket(_url?: string) {
         await vid.play();
         const cv = document.createElement('canvas');
         canvasEl = cv;
-        cv.width = vid.videoWidth || 640;
-        cv.height = vid.videoHeight || 480;
+        cv.width = PROC_W;
+        cv.height = PROC_H;
 
         setState(s => ({ ...s, cameraConnected: true, connected: true, streamUrl: 'camera', cameraStream: stream }));
 
