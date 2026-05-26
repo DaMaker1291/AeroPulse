@@ -186,7 +186,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[9px] text-[#8E8E93]/40 italic">{guide.action}</span>
-                {currentIdx < pageOrder.length - 1 && unlockedPages.includes(pageOrder[currentIdx + 1]) && (
+                {currentIdx < pageOrder.length - 1 && unlockedPages.has(pageOrder[currentIdx + 1]) && (
                   <button onClick={goNext} className="flex items-center gap-1 text-[11px] text-[#0A84FF] font-semibold hover:text-white transition-colors px-3 py-1.5 rounded-lg bg-[#0A84FF]/10 hover:bg-[#0A84FF]/20">
                     Next Step <ArrowRight className="w-3 h-3" />
                   </button>
@@ -250,7 +250,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
       </AnimatePresence>
 
       {/* Mobile next step button */}
-      {isMobile && showGuide && currentIdx < pageOrder.length - 1 && unlockedPages.includes(pageOrder[currentIdx + 1]) && (
+      {isMobile && showGuide && currentIdx < pageOrder.length - 1 && unlockedPages.has(pageOrder[currentIdx + 1]) && (
         <motion.button
           onClick={goNext}
           whileTap={{ scale: 0.97 }}
