@@ -57,7 +57,7 @@ const INITIAL: BackendState = {
 };
 
 const RPPG_BUF_SECS = 30;
-const WINDOW_SECS = 10;
+const WINDOW_SECS = 5;
 const FFT_FS = 60;
 const STATE_INTERVAL = 80;
 const WAVE_LEN = 60;
