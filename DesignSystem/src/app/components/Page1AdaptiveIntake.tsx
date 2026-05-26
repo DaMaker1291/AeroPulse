@@ -12,10 +12,12 @@ interface Page1Props {
 }
 
 const questions = [
-  { id: 1, text: "Are you experiencing any acute pain, numbness, or muscle weakness today?", category: "Motor Function" },
-  { id: 2, text: "Have you noticed any recent changes in your balance or coordination?", category: "Vestibular" },
-  { id: 3, text: "Do you experience tremors or involuntary muscle movements?", category: "Neuromuscular" },
-  { id: 4, text: "Have you had difficulty with fine motor tasks like writing or buttoning clothes?", category: "Dexterity" },
+  { id: 1, text: "Are you experiencing any acute pain, numbness, or muscle weakness today? If yes, describe onset, location, severity (1-10), and duration.", category: "Motor Function" },
+  { id: 2, text: "Have you noticed any recent changes in your balance or coordination? Any falls or near-falls in the past month?", category: "Vestibular" },
+  { id: 3, text: "Do you experience tremors or involuntary muscle movements? At rest or with action? Affecting one or both sides?", category: "Neuromuscular" },
+  { id: 4, text: "Have you had difficulty with fine motor tasks like writing, buttoning clothes, or picking up small objects? Any change in handwriting?", category: "Dexterity" },
+  { id: 5, text: "Any unexplained weight loss (>5% in 6 months), night sweats, or persistent fever? Any new lumps, moles, or skin changes?", category: "Constitutional" },
+  { id: 6, text: "Do you have a history of hypertension, diabetes, heart disease, or stroke? Any current medications (anticoagulants, beta-blockers)?", category: "Medical History" },
 ];
 
 const MESH_COLOR = '#30D158';

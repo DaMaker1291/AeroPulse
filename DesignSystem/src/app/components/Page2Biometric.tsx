@@ -43,7 +43,7 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
         return next;
       });
     }
-  }, [backendRppgWave?.length]);
+  }, [backendRppgWave?.[backendRppgWave.length - 1]]);
 
   // No fallback mock — flat line when no backend data
 
@@ -58,7 +58,7 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
         return next;
       });
     }
-  }, [backendM3Wave?.length]);
+  }, [backendM3Wave?.[backendM3Wave.length - 1], backendM4Wave?.[backendM4Wave.length - 1]]);
 
   // No fallback mock mechanical — flat line when no backend data
 
@@ -87,8 +87,8 @@ export function Page2Biometric({ onScanComplete, backendVitals, backendRppgWave,
   const vitalCards = [
     { label: 'Heart Rate', value: vitals.heartRate > 0 ? Math.round(vitals.heartRate) : null, unit: 'BPM', icon: Heart, color: '#FF453A', status: vitals.heartRate > 0 ? 'normal' : 'pending' },
     { label: 'Respiration', value: vitals.respiration > 0 ? Math.round(vitals.respiration) : null, unit: 'BR/MIN', icon: Wind, color: '#0A84FF', status: vitals.respiration > 0 ? 'normal' : 'pending' },
-    { label: 'Blood O₂', value: null, unit: '% SpO2', icon: Droplets, color: '#30D158', status: 'na' },
-    { label: 'Core Temp', value: null, unit: '°C', icon: Thermometer, color: '#FF9F0A', status: 'na' },
+    { label: 'Blood O₂', value: vitals.bloodOxygen > 0 ? Math.round(vitals.bloodOxygen) : null, unit: '% SpO2', icon: Droplets, color: '#30D158', status: vitals.bloodOxygen > 0 ? 'normal' : 'pending' },
+    { label: 'Core Temp', value: vitals.temperature > 0 ? vitals.temperature.toFixed(1) : null, unit: '°C', icon: Thermometer, color: '#FF9F0A', status: vitals.temperature > 0 ? 'normal' : 'pending' },
   ];
 
   return (

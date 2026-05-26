@@ -7,20 +7,22 @@ import { Page2Biometric } from './components/Page2Biometric';
 import { Page3Triage } from './components/Page3Triage';
 import { Page4Enterprise } from './components/Page4Enterprise';
 import { Page5Labvanced } from './components/Page5Labvanced';
+import { Page6Onboarding } from './components/Page6Onboarding';
 import { useWebSocket } from '../useWebSocket';
 
-type PageKey = 'intake' | 'biometric' | 'triage' | 'enterprise' | 'labvanced';
+type PageKey = 'intake' | 'biometric' | 'triage' | 'enterprise' | 'labvanced' | 'onboarding';
 
 interface UserData {
   name: string;
   org: string;
   role: string;
+  reasonForVisit: string;
 }
 
 const pages = [
   { key: 'intake' as PageKey, name: 'Adaptive Intake', step: '01', icon: Activity, desc: 'AI Clinical Screener' },
   { key: 'biometric' as PageKey, name: 'Biometric Scanner', step: '02', icon: Scan, desc: 'Multimodal Interrogation' },
-  { key: 'triage' as PageKey, name: 'Predictive Triage', step: '03', icon: Brain, desc: 'FFT Risk Analysis' },
+  { key: 'triage' as PageKey, name: 'Predictive Triage', step: '03', icon: Brain, desc: 'Diagnostic Analysis' },
   { key: 'enterprise' as PageKey, name: 'Enterprise Fleet', step: '04', icon: Building2, desc: 'Audit Dashboard' },
   { key: 'labvanced' as PageKey, name: 'LabVanced', step: '05', icon: Heart, desc: 'rPPG Technology' },
 ];
@@ -32,13 +34,13 @@ interface AuthenticatedAppProps {
 
 export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppProps) {
   const [currentPage, setCurrentPage] = useState<PageKey>('intake');
-  const [unlockedPages, setUnlockedPages] = useState<Set<PageKey>>(new Set(['intake', 'labvanced']));
+  const [unlockedPages, setUnlockedPages] = useState<Set<PageKey>>(new Set(['intake', 'labvanced', 'onboarding']));
   const [completedPages, setCompletedPages] = useState<Set<PageKey>>(new Set());
 
   const backend = useWebSocket();
 
   const handleUnlockNavigation = () => {
-    setUnlockedPages(new Set(['intake', 'biometric', 'triage', 'enterprise', 'labvanced']));
+    setUnlockedPages(new Set(['intake', 'biometric', 'triage', 'enterprise', 'labvanced', 'onboarding']));
     setCompletedPages(prev => new Set([...prev, 'intake']));
   };
 
@@ -243,6 +245,8 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
                   <Page3Triage
                     backendTriage={backend.triage}
                     backendFft={backend.fft}
+                    backendVitals={backend.vitals}
+                    reasonForVisit={user?.reasonForVisit || ''}
                   />
                 )}
                 {currentPage === 'enterprise' && (
@@ -252,6 +256,7 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
                   />
                 )}
                 {currentPage === 'labvanced' && <Page5Labvanced />}
+                {currentPage === 'onboarding' && <Page6Onboarding />}
               </motion.div>
             </AnimatePresence>
           </div>

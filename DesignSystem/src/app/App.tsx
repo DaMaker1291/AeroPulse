@@ -6,6 +6,7 @@ interface UserData {
   name: string;
   org: string;
   role: string;
+  reasonForVisit: string;
 }
 
 export default function App() {

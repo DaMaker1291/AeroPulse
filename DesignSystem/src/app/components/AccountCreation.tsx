@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 
 interface AccountCreationProps {
-  onComplete: (userData: { name: string; org: string; role: string }) => void;
+  onComplete: (userData: { name: string; org: string; role: string; reasonForVisit: string }) => void;
 }
 
 const ROLES = [
@@ -47,6 +47,7 @@ export function AccountCreation({ onComplete }: AccountCreationProps) {
     fullName: '', organization: '', role: '', email: '',
     password: '', confirmPassword: '', mfa: true,
     licenseKey: '', region: '', acceptTerms: false,
+    reasonForVisit: '',
   });
 
   const update = (field: string, value: string | boolean) =>
@@ -55,7 +56,7 @@ export function AccountCreation({ onComplete }: AccountCreationProps) {
   const handleComplete = () => {
     setCompleting(true);
     setTimeout(() => {
-      onComplete({ name: form.fullName || 'Dr. Sarah Chen', org: form.organization || 'Memorial Hospital', role: form.role || 'Neurologist' });
+      onComplete({ name: form.fullName || 'Dr. Sarah Chen', org: form.organization || 'Memorial Hospital', role: form.role || 'Neurologist', reasonForVisit: form.reasonForVisit });
     }, 1800);
   };
 
@@ -201,6 +202,16 @@ export function AccountCreation({ onComplete }: AccountCreationProps) {
                       </div>
                     </div>
                     <FormField icon={<Mail className="w-4 h-4" />} label="Work Email" placeholder="s.chen@memorialhospital.org" value={form.email} onChange={v => update('email', v)} type="email" />
+                    <div>
+                      <label className="block text-[11px] text-[#8E8E93] tracking-widest mb-2 uppercase font-medium">Patient's Reason for Visit</label>
+                      <textarea
+                        placeholder="e.g., Chest pain, shortness of breath, follow-up, routine screening..."
+                        value={form.reasonForVisit}
+                        onChange={e => update('reasonForVisit', e.target.value)}
+                        rows={2}
+                        className="w-full bg-[#16161A] border border-[#2C2C2E] rounded-xl px-4 py-3 text-white text-[14px] focus:outline-none focus:border-[#0A84FF] focus:ring-1 focus:ring-[#0A84FF]/20 transition-all placeholder:text-[#8E8E93]/40 resize-none"
+                      />
+                    </div>
                   </div>
 
                   <button
