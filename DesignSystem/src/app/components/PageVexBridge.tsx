@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Usb, Cable, Activity, Gauge, RotateCw, AlertTriangle, CheckCircle2, Plug, ChevronRight, WifiOff, Stethoscope, ArrowLeftRight } from 'lucide-react';
+import { Usb, Cable, Activity, Gauge, RotateCw, AlertTriangle, CheckCircle2, Plug, ChevronRight, WifiOff, Stethoscope, ArrowLeftRight, Monitor } from 'lucide-react';
 import { useIsMobile } from './ui/use-mobile';
 import type { VexState, VexDiagnosis } from '../../useVexSerial';
 
