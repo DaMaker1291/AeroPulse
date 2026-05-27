@@ -32,7 +32,7 @@ function clamp(v: number, min = 0, max = 100): number {
 export function Page2Biometric({ backendVitals, backendRppgWave, backendM3Wave, backendM4Wave }: Page2Props) {
   const [waveData1, setWaveData1] = useState<Array<{ time: number; value: number }>>([]);
   const [waveData2, setWaveData2] = useState<Array<{ time: number; leftHand: number; rightHand: number }>>([]);
-  const [vitals, setVitals] = useState({ heartRate: 0, respiration: 0, bloodOxygen: 0 });
+  const [vitals, setVitals] = useState<Partial<VitalsData>>({});
   const tickRef = useRef(0);
 
   // Stable rPPG waveform: append new point from backend, maintain fixed window
@@ -66,12 +66,8 @@ export function Page2Biometric({ backendVitals, backendRppgWave, backendM3Wave, 
   // VEX motor wave data comes from serial port (useVexSerial), not generated here
 
   useEffect(() => {
-    if (backendVitals && backendVitals.heartRate > 0) {
-      setVitals(prev => ({
-        heartRate: backendVitals.heartRate ?? prev.heartRate,
-        respiration: backendVitals.respiration ?? prev.respiration,
-        bloodOxygen: backendVitals.bloodOxygen ?? prev.bloodOxygen,
-      }));
+    if (backendVitals) {
+      setVitals(prev => ({ ...prev, ...backendVitals }));
     }
   }, [backendVitals]);
 
