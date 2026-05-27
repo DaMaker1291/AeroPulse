@@ -205,9 +205,11 @@ export function useVexSerial() {
     tryAutoConnect();
   }, [tryAutoConnect]);
 
+  const encoder = new TextEncoder();
+
   const sendCommand = useCallback(async (cmd: string) => {
     if (!writerRef.current) return;
-    try { await writerRef.current.write(cmd + '\n'); } catch (err) {
+    try { await writerRef.current.write(encoder.encode(cmd + '\n')); } catch (err) {
       setState(s => ({ ...s, error: `Serial write error: ${err instanceof Error ? err.message : String(err)}` }));
     }
   }, []);

@@ -31,18 +31,13 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
-#include <algorithm>
-
 pros::Motor gripLeft(3);
 pros::Motor gripRight(4);
 
-// ── PID constants ──────────────────────────────────────────────────────────
-const double KP = 1.5;           // Position-hold gain
-const double MOVE_VOLTAGE = 80;  // Voltage for commanded movement
-const double HOLD_VOLTAGE_MAX = 95.0;
-
-volatile double holdPosLeft = 0.0;
-volatile double holdPosRight = 0.0;
+// ── Passive hold (no active PID) ──────────────────────────────────────────
+// The grip motors use BRAKE mode, providing gentle passive resistance
+// when turned by hand.  No active position-hold fight — prevents gear breakage
+// while still allowing proper force measurement via get_torque().
 volatile bool holdEnabled = true;
 
 // ── Command parsing ─────────────────────────────────────────────────────────
@@ -59,39 +54,39 @@ void executeCommand(const char* cmd, int len) {
 
   if (strncmp(cmd, "STOP", 4) == 0) {
     holdEnabled = false;
-    gripLeft.brake();
-    gripRight.brake();
+    gripLeft.coast();
+    gripRight.coast();
     printf("ACK:STOP\n"); fflush(stdout);
   }
   else if (strncmp(cmd, "START", 5) == 0) {
     holdEnabled = true;
-    holdPosLeft = gripLeft.get_position();
-    holdPosRight = gripRight.get_position();
+    gripLeft.move(0);
+    gripRight.move(0);
     printf("ACK:START\n"); fflush(stdout);
   }
   else if (strncmp(cmd, "CALIBRATE", 9) == 0) {
-    holdPosLeft = gripLeft.get_position();
-    holdPosRight = gripRight.get_position();
     holdEnabled = true;
+    gripLeft.move(0);
+    gripRight.move(0);
     printf("ACK:CALIBRATE\n"); fflush(stdout);
   }
   else if (strncmp(cmd, "SETPOS:", 7) == 0) {
     double pos = atof(cmd + 7);
-    holdPosLeft = pos;
-    holdPosRight = pos;
     holdEnabled = true;
+    gripLeft.move_absolute(pos, 60);
+    gripRight.move_absolute(pos, 60);
     printf("ACK:SETPOS:%.1f\n", pos); fflush(stdout);
   }
   else if (strncmp(cmd, "DIAGNOSE", 8) == 0) {
     printf("ACK:DIAGNOSE:START\n"); fflush(stdout);
 
+    double currentPos = gripLeft.get_position();
+
     // Phase 1: Move to +45° (pull/tension direction)
-    gripLeft.move_velocity(50);   // Start moving
-    gripRight.move_velocity(50);
-    holdPosLeft = 45.0;
-    holdPosRight = 45.0;
+    gripLeft.move_absolute(45.0, 60);
+    gripRight.move_absolute(45.0, 60);
     holdEnabled = true;
-    pros::delay(800);  // Let it reach position
+    pros::delay(800);
 
     // Read torque at +45°
     double torquePull = gripLeft.get_torque();
@@ -99,18 +94,14 @@ void executeCommand(const char* cmd, int len) {
     printf("TENSION:%.3f,%.3f,Nm\n", torquePull, torquePullR); fflush(stdout);
 
     // Phase 2: Return to 0°
-    gripLeft.move_velocity(-50);
-    gripRight.move_velocity(-50);
-    holdPosLeft = 0.0;
-    holdPosRight = 0.0;
+    gripLeft.move_absolute(0.0, 60);
+    gripRight.move_absolute(0.0, 60);
     holdEnabled = true;
     pros::delay(800);
 
     // Phase 3: Move to -45° (compression direction)
-    gripLeft.move_velocity(-50);
-    gripRight.move_velocity(-50);
-    holdPosLeft = -45.0;
-    holdPosRight = -45.0;
+    gripLeft.move_absolute(-45.0, 60);
+    gripRight.move_absolute(-45.0, 60);
     holdEnabled = true;
     pros::delay(800);
 
@@ -120,18 +111,14 @@ void executeCommand(const char* cmd, int len) {
     printf("COMPRESSION:%.3f,%.3f,Nm\n", torqueComp, torqueCompR); fflush(stdout);
 
     // Phase 4: Return to 0°
-    gripLeft.move_velocity(50);
-    gripRight.move_velocity(50);
-    holdPosLeft = 0.0;
-    holdPosRight = 0.0;
+    gripLeft.move_absolute(0.0, 60);
+    gripRight.move_absolute(0.0, 60);
     holdEnabled = true;
     pros::delay(800);
-    gripLeft.brake();
-    gripRight.brake();
 
-    // Hold at 0°
-    holdPosLeft = gripLeft.get_position();
-    holdPosRight = gripRight.get_position();
+    // Return to gentle brake hold
+    gripLeft.move(0);
+    gripRight.move(0);
     holdEnabled = true;
     printf("ACK:DIAGNOSE:DONE\n"); fflush(stdout);
   }
@@ -172,31 +159,24 @@ const double LEVER_ARM_M = 0.02; // ~2 cm from motor shaft to grip point
 void controlLoop(void* param) {
   int frame = 0;
 
-  // Latch initial position
+  // Set brake mode for gentle passive resistance (can turn by hand)
+  gripLeft.set_brake_mode(pros::E_MOTOR_BRAKE_BRAKE);
+  gripRight.set_brake_mode(pros::E_MOTOR_BRAKE_BRAKE);
+
   pros::delay(300);
-  holdPosLeft = gripLeft.get_position();
-  holdPosRight = gripRight.get_position();
   holdEnabled = true;
-  pros::lcd::set_text(2, "HOLD 50 Hz");
+  pros::lcd::set_text(2, "BRAKE 50 Hz");
 
   while (true) {
-    // ── Position-hold PID ──────────────────────────────────────────────
+    // ── Gentle hold — motor in BRAKE mode at zero voltage ──────────────
+    // The user can still turn the motor by hand; torque reading rises
+    // proportionally to applied force, enabling proper force estimation.
     if (holdEnabled) {
-      double pL = gripLeft.get_position();
-      double pR = gripRight.get_position();
-      double errL = holdPosLeft - pL;
-      double errR = holdPosRight - pR;
-
-      double cmdL = errL * KP;
-      double cmdR = errR * KP;
-      cmdL = std::max(-HOLD_VOLTAGE_MAX, std::min(HOLD_VOLTAGE_MAX, cmdL));
-      cmdR = std::max(-HOLD_VOLTAGE_MAX, std::min(HOLD_VOLTAGE_MAX, cmdR));
-
-      gripLeft.move(cmdL);
-      gripRight.move(cmdR);
+      gripLeft.move(0);   // brake holds with passive resistance
+      gripRight.move(0);
     } else {
-      gripLeft.brake();
-      gripRight.brake();
+      gripLeft.coast();   // freewheel — no resistance
+      gripRight.coast();
     }
 
     // ── Read sensors ────────────────────────────────────────────────────
@@ -234,7 +214,7 @@ void initialize() {
 
   pros::lcd::initialize();
   pros::lcd::set_text(0, "AeroPulse VEX Bridge");
-  pros::lcd::set_text(1, "v2 — USB commands OK");
+  pros::lcd::set_text(1, "v3 — gentle brake hold");
 
   pros::delay(800);
 
