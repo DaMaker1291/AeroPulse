@@ -3,8 +3,8 @@ import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import {
   createBandpassFilter, applyFilterChain, computeHeartRate, computeRespirationRate, computeSpO2,
   extractRGB, extractRGBSkin, computeSkinROI, posProject, SignalBuffer, FACE_MESH_CONNECTIONS,
-  HRResult, computeHRQuality, adaptiveNoiseCancel, computeHRV, enhanceImageData, extractRGBBestZone,
-  computeAugmentationIndex, computePulseWidth, detectPeaks,
+  HRResult, computeHRQuality, adaptiveNoiseCancel, computeHRV, enhanceImageData, extractRGBMultiZone,
+  computeAugmentationIndex, computePulseWidth, detectPeaks, linearizeGamma, computeBackgroundROI,
 } from './cameraPipeline';
 
 export interface VitalsData {
@@ -259,12 +259,12 @@ export function useWebSocket(_url?: string) {
         }
 
         if (roi) {
-          // Apply adaptive contrast enhancement to maximize pulse signal amplitude
+          // Step 1: Linearize gamma (inverse sRGB) before any pixel math
+          linearizeGamma(imgData);
+          // Step 2: Adaptive contrast enhancement to maximize pulse amplitude
           enhanceImageData(imgData);
-          // Multi-zone extraction: picks upper (forehead) or lower (cheeks) zone
-          // based on which has higher red-green contrast (= stronger pulse)
-          const rgbResult = landmarks ? extractRGBBestZone(imgData, roi) : extractRGB(imgData, roi);
-          const rgb = rgbResult;
+          // Step 3: Multi-zone extraction (6 sub-regions, quality-weighted)
+          const rgb = landmarks ? extractRGBMultiZone(imgData, roi) : extractRGB(imgData, roi);
           rBuf.push(rgb.r);
           gBuf.push(rgb.g);
           bBuf.push(rgb.b);
@@ -276,8 +276,8 @@ export function useWebSocket(_url?: string) {
           signalQualityAccum += Math.abs(rgb.g - rgb.r) / (rgb.g + rgb.r + 1);
           signalQualityCount++;
 
-          // Extract background noise reference from top-left 10% corner
-          const bgROI = { x: 0, y: 0, w: PROC_W * 0.12, h: PROC_H * 0.12 };
+          // Extract noise reference from face-adjacent background region
+          const bgROI = landmarks ? computeBackgroundROI(roi, PROC_W, PROC_H) : { x: 0, y: 0, w: PROC_W * 0.12, h: PROC_H * 0.12 };
           const bgRgb = extractRGB(imgData, bgROI);
           const bgIntensity = (bgRgb.r + bgRgb.g + bgRgb.b) / 3;
           bgBuf.push(bgIntensity);
