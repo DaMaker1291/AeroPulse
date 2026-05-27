@@ -14,6 +14,8 @@ export interface VexState {
   portInfo: string;
   data: VexData | null;
   streaming: boolean;
+  error: string | null;
+  webSerialAvailable: boolean;
 }
 
 const INITIAL: VexState = {
@@ -21,15 +23,20 @@ const INITIAL: VexState = {
   portInfo: '',
   data: null,
   streaming: false,
+  error: null,
+  webSerialAvailable: false,
 };
 
 export function useVexSerial() {
-  const [state, setState] = useState<VexState>(INITIAL);
+  const [state, setState] = useState<VexState>(() => ({
+    ...INITIAL,
+    webSerialAvailable: typeof navigator !== 'undefined' && 'serial' in navigator,
+  }));
   const portRef = useRef<SerialPort | null>(null);
   const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
   const writerRef = useRef<WritableStreamDefaultWriter | null>(null);
   const runningRef = useRef(true);
-  const lineBufferRef = useRef('');
+  const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const parseLine = useCallback((line: string): VexData | null => {
     const data: Record<string, number> = {};
@@ -54,6 +61,7 @@ export function useVexSerial() {
 
   const disconnect = useCallback(async () => {
     runningRef.current = false;
+    if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
     if (readerRef.current) {
       try { await readerRef.current.cancel(); } catch { /* ignore */ }
       readerRef.current = null;
@@ -66,16 +74,19 @@ export function useVexSerial() {
       try { await portRef.current.close(); } catch { /* ignore */ }
       portRef.current = null;
     }
-    setState(INITIAL);
+    setState(s => ({ ...s, ...INITIAL, webSerialAvailable: s.webSerialAvailable }));
   }, []);
 
   const connect = useCallback(async () => {
     if (!navigator.serial) {
-      console.error('Web Serial API not available (use Chrome/Edge with HTTPS or localhost)');
+      setState(s => ({ ...s, error: 'Web Serial API not available. Use Chrome/Edge with HTTPS or localhost.' }));
       return;
     }
 
+    setState(s => ({ ...s, error: null }));
+
     try {
+      // Show the browser's serial port picker
       const port = await navigator.serial.requestPort();
       await port.open({ baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none' });
       portRef.current = port;
@@ -85,9 +96,9 @@ export function useVexSerial() {
         ? `USB VID:${portInfo.usbVendorId} PID:${portInfo.usbProductId}`
         : `Serial Port`;
 
-      setState(s => ({ ...s, connected: true, portInfo: portLabel, streaming: true }));
+      setState(s => ({ ...s, connected: true, portInfo: portLabel, streaming: true, error: null }));
 
-      // ── Set up reading with line splitting ─────────────────────────────
+      // ── Set up reading ──────────────────────────────────────────────────
       const textDecoder = new TextDecoderStream();
       port.readable.pipeTo(textDecoder.writable).catch(() => {});
       const reader = textDecoder.readable.getReader();
@@ -100,6 +111,10 @@ export function useVexSerial() {
 
       // ── Read loop ──────────────────────────────────────────────────────
       let buf = '';
+      let firstDataTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+        setState(s => s.connected ? { ...s, error: 'Connected but no data received. Is the VEX Brain running the bridge firmware?' } : s);
+      }, 5000);
+
       while (runningRef.current) {
         try {
           const { value, done } = await reader.read();
@@ -113,21 +128,33 @@ export function useVexSerial() {
             buf = buf.slice(nlIdx + 1);
 
             if (line.length > 0) {
+              // Check for ACK responses
+              if (line.startsWith('ACK:')) {
+                // Command acknowledged — not a data line
+                continue;
+              }
               const parsed = parseLine(line);
               if (parsed) {
-                setState(s => ({ ...s, data: parsed }));
+                if (firstDataTimeout) { clearTimeout(firstDataTimeout); firstDataTimeout = null; }
+                setState(s => ({ ...s, data: parsed, error: null }));
               }
             }
           }
         } catch (err) {
           if (runningRef.current) {
-            console.error('Serial read error:', err);
+            setState(s => ({ ...s, error: `Serial read error: ${err instanceof Error ? err.message : String(err)}` }));
           }
           break;
         }
       }
+      if (firstDataTimeout) clearTimeout(firstDataTimeout);
     } catch (err) {
-      console.error('Serial connection error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('cancelled') || msg.includes('cancel')) {
+        setState(s => ({ ...s, error: null }));
+      } else {
+        setState(s => ({ ...s, error: `Connection failed: ${msg}` }));
+      }
       setState(s => ({ ...s, connected: false, portInfo: '', streaming: false }));
     }
   }, [parseLine]);
@@ -137,7 +164,7 @@ export function useVexSerial() {
     try {
       await writerRef.current.write(cmd + '\n');
     } catch (err) {
-      console.error('Serial write error:', err);
+      setState(s => ({ ...s, error: `Serial write error: ${err instanceof Error ? err.message : String(err)}` }));
     }
   }, []);
 
@@ -159,15 +186,10 @@ export function useVexSerial() {
   useEffect(() => {
     return () => {
       runningRef.current = false;
-      if (readerRef.current) {
-        readerRef.current.cancel().catch(() => {});
-      }
-      if (writerRef.current) {
-        writerRef.current.close().catch(() => {});
-      }
-      if (portRef.current) {
-        portRef.current.close().catch(() => {});
-      }
+      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+      if (readerRef.current) { readerRef.current.cancel().catch(() => {}); }
+      if (writerRef.current) { writerRef.current.close().catch(() => {}); }
+      if (portRef.current) { portRef.current.close().catch(() => {}); }
     };
   }, []);
 

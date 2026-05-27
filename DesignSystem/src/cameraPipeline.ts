@@ -245,19 +245,25 @@ export function adaptiveNoiseCancel(
 export function computeSpO2(r: Float64Array, g: Float64Array): number {
   const n = r.length;
   if (n < 10) return 0;
-  const meanR = r.reduce((a, v) => a + v, 0) / n;
-  const meanG = g.reduce((a, v) => a + v, 0) / n;
+  // Use only the last 6s (360 frames at 60fps) for responsiveness
+  const winLen = Math.min(n, 360);
+  const offset = n - winLen;
+  let meanR = 0, meanG = 0;
+  for (let i = offset; i < n; i++) { meanR += r[i]; meanG += g[i]; }
+  meanR /= winLen; meanG /= winLen;
   if (meanR < 1 || meanG < 1) return 0;
   let acR = 0, acG = 0;
-  for (let i = 0; i < n; i++) {
+  for (let i = offset; i < n; i++) {
     acR += (r[i] - meanR) ** 2;
     acG += (g[i] - meanG) ** 2;
   }
-  const rmsR = Math.sqrt(acR / n);
-  const rmsG = Math.sqrt(acG / n);
+  const rmsR = Math.sqrt(acR / winLen);
+  const rmsG = Math.sqrt(acG / winLen);
+  // Ratio of ratios: (AC_R/DC_R) / (AC_G/DC_G)
   const ratio = (rmsR / meanR) / (rmsG / meanG + 1e-10);
-  const spo2 = Math.round(110 - 25 * Math.max(0.2, Math.min(0.8, ratio)));
-  return Math.max(85, Math.min(100, spo2));
+  // Empirical mapping: ratio 0.3 → 98%, ratio 0.9 → 85%
+  const spo2 = 100 - (Math.max(0.3, Math.min(0.9, ratio)) - 0.3) * 25;
+  return Math.max(85, Math.min(100, Math.round(spo2)));
 }
 
 export function computeRespirationRate(avgIntensity: Float64Array, fs: number): number {

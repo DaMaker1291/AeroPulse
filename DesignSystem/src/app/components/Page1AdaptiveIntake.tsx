@@ -177,10 +177,10 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
   const isMobile = useIsMobile();
 
   return (
-    <div className={`${isMobile ? 'flex flex-col gap-3' : 'flex gap-4'}`}>
+    <div className={`${isMobile ? 'flex flex-col gap-3' : 'flex gap-4'} ${isMobile ? '' : 'flex-1 min-h-0'}`}>
 
-      {/* AI Clinical Screener */}
-      <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] flex flex-col overflow-y-auto ${isMobile ? 'flex-shrink-0' : 'flex-1'}`}>
+      {/* AI Clinical Screener — takes 2/3 width on desktop */}
+      <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] flex flex-col overflow-y-auto ${isMobile ? 'flex-shrink-0' : 'flex-[2_2_0%] min-w-0'}`}>
 
         {/* Card header */}
         <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-[#1E1E22] flex items-center justify-between">
@@ -287,7 +287,7 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="max-w-xl text-center"
+              className="text-center w-full max-w-3xl"
             >
               <p className={`font-semibold text-white leading-relaxed tracking-tight ${isMobile ? 'text-[15px]' : 'text-[22px]'}`}>
                 {questions[currentQ].text}
@@ -325,8 +325,8 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
         </div>
       </div>
 
-      {/* Optical Targeting Viewport */}
-      <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] flex flex-col overflow-hidden ${isMobile ? 'flex-1 min-h-[250px]' : 'flex-1'}`}>
+      {/* Optical Targeting Viewport — takes 1/3 width on desktop */}
+      <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] flex flex-col overflow-hidden ${isMobile ? 'flex-1 min-h-[250px]' : 'flex-[1_1_0%] min-w-0'}`}>
 
         {/* Card header */}
         <div className="px-4 sm:px-6 pt-3 sm:pt-5 pb-2 sm:pb-4 border-b border-[#1E1E22] flex items-center justify-between">

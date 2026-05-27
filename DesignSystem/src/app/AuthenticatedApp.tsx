@@ -8,11 +8,12 @@ import { Page3Triage } from './components/Page3Triage';
 import { Page4Enterprise } from './components/Page4Enterprise';
 import { Page5Labvanced } from './components/Page5Labvanced';
 import { Page6Onboarding } from './components/Page6Onboarding';
+import { PageVexBridge } from './components/PageVexBridge';
 import { useWebSocket } from '../useWebSocket';
 import { useVexSerial } from '../useVexSerial';
 import { useIsMobile } from './components/ui/use-mobile';
 
-type PageKey = 'intake' | 'biometric' | 'triage' | 'enterprise' | 'labvanced' | 'onboarding';
+type PageKey = 'intake' | 'biometric' | 'vexbridge' | 'triage' | 'enterprise' | 'labvanced' | 'onboarding';
 
 interface UserData {
   name: string;
@@ -24,8 +25,9 @@ interface UserData {
 const pages = [
   { key: 'intake' as PageKey, name: 'Adaptive Intake', step: '01', icon: Activity, desc: 'AI Clinical Screener' },
   { key: 'biometric' as PageKey, name: 'Biometric Scanner', step: '02', icon: Scan, desc: 'Multimodal Interrogation' },
-  { key: 'triage' as PageKey, name: 'Predictive Triage', step: '03', icon: Brain, desc: 'Diagnostic Analysis' },
-  { key: 'enterprise' as PageKey, name: 'Enterprise Fleet', step: '04', icon: Building2, desc: 'Audit Dashboard' },
+  { key: 'vexbridge' as PageKey, name: 'VEX Brain Bridge', step: '03', icon: Cable, desc: 'Motor Torque Telemetry' },
+  { key: 'triage' as PageKey, name: 'Predictive Triage', step: '04', icon: Brain, desc: 'Diagnostic Analysis' },
+  { key: 'enterprise' as PageKey, name: 'Enterprise Fleet', step: '05', icon: Building2, desc: 'Audit Dashboard' },
   { key: 'labvanced' as PageKey, name: 'LabVanced', step: '05', icon: Heart, desc: 'rPPG Technology' },
 ];
 
@@ -50,8 +52,18 @@ const stepGuides: Record<PageKey, { title: string; instructions: string[]; actio
     ],
     action: 'Press scan button below',
   },
+  vexbridge: {
+    title: 'Step 3: VEX Brain Connection',
+    instructions: [
+      'Connect the VEX V5 Brain to your computer via USB-C',
+      'Click "Connect VEX" and select the VEX V5 Brain port',
+      'Verify live torque data appears in the gauges',
+      'Use calibration if readings seem inaccurate',
+    ],
+    action: 'Connect VEX below',
+  },
   triage: {
-    title: 'Step 3: Review Analysis',
+    title: 'Step 4: Review Analysis',
     instructions: [
       'Review your vital signs and physiological observations',
       'Check the Planetary Health environmental correlation',
@@ -61,7 +73,7 @@ const stepGuides: Record<PageKey, { title: string; instructions: string[]; actio
     action: 'Review complete →',
   },
   enterprise: {
-    title: 'Step 4: Enterprise Fleet',
+    title: 'Step 5: Enterprise Fleet',
     instructions: [
       'View the enterprise fleet audit dashboard',
       'Monitor connected devices and patient sessions',
@@ -69,7 +81,7 @@ const stepGuides: Record<PageKey, { title: string; instructions: string[]; actio
     action: 'View dashboard',
   },
   labvanced: {
-    title: 'Step 5: Technology Overview',
+    title: 'Step 6: Technology Overview',
     instructions: [
       'Learn about rPPG (remote photoplethysmography) technology',
       'Understand how camera-based vital sign extraction works',
@@ -118,16 +130,11 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
   const vexM3Wave = vex.state.connected ? vexM3Ref.current : undefined;
   const vexM4Wave = vex.state.connected ? vexM4Ref.current : undefined;
 
-  const pageOrder: PageKey[] = ['intake', 'biometric', 'triage', 'enterprise', 'labvanced'];
+  const pageOrder: PageKey[] = ['intake', 'biometric', 'vexbridge', 'triage', 'enterprise', 'labvanced'];
 
   const handleUnlockNavigation = () => {
-    setUnlockedPages(new Set(['intake', 'biometric', 'triage', 'enterprise', 'labvanced', 'onboarding']));
+    setUnlockedPages(new Set(['intake', 'biometric', 'vexbridge', 'triage', 'enterprise', 'labvanced', 'onboarding']));
     setCompletedPages(prev => new Set([...prev, 'intake']));
-  };
-
-  const handleScanComplete = () => {
-    setCompletedPages(prev => new Set([...prev, 'biometric']));
-    setCurrentPage('triage');
   };
 
   const navigate = (key: PageKey) => {
@@ -153,8 +160,56 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
   const guide = stepGuides[currentPage];
   const isComplete = completedPages.has(currentPage);
 
+  const renderVexBanner = () => {
+    if (vex.state.connected) {
+      return (
+        <div className="bg-[#16161A] rounded-2xl border border-[#30D158]/20 p-2 sm:p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#30D158]" style={{ animation: 'pulse 2s ease-in-out infinite' }} />
+            <Cable className="w-3 h-3 text-[#30D158]" />
+            <span className="text-[10px] sm:text-[11px] text-[#30D158] font-semibold font-mono">VEX CONNECTED</span>
+            <span className="text-[9px] text-[#8E8E93] font-mono hidden sm:inline">{vex.state.portInfo}</span>
+            <span className="text-[9px] text-[#8E8E93] font-mono hidden sm:inline">
+              L:{vex.state.data?.m3Torque.toFixed(2) ?? '?'}Nm · R:{vex.state.data?.m4Torque.toFixed(2) ?? '?'}Nm
+            </span>
+          </div>
+          <button onClick={vex.disconnect} className="text-[9px] text-[#FF453A]/60 hover:text-[#FF453A] transition-colors font-mono">
+            Disconnect
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className="bg-[#16161A] rounded-2xl border border-[#1E1E22] p-2 sm:p-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-[#FF453A]" />
+          <Cable className="w-3 h-3 text-[#8E8E93]" />
+          <span className="text-[10px] sm:text-[11px] text-[#8E8E93] font-mono">
+            {vex.state.webSerialAvailable ? 'VEX Brain disconnected' : 'Web Serial API not available (use Chrome/Edge HTTPS)'}
+          </span>
+          {vex.state.error && (
+            <span className="text-[9px] text-[#FF9F0A] font-mono truncate max-w-[200px] sm:max-w-[400px]" title={vex.state.error}>
+              {vex.state.error}
+            </span>
+          )}
+        </div>
+        {vex.state.webSerialAvailable && (
+          <button
+            onClick={vex.connect}
+            className="flex items-center gap-1 text-[9px] sm:text-[10px] text-[#0A84FF] hover:text-white transition-colors font-mono"
+          >
+            <Usb className="w-3 h-3" /> CONNECT VEX
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const renderContent = () => (
     <div className={`flex flex-col gap-3 ${isMobile ? '' : 'min-h-0 flex-1'}`}>
+      {/* Persistent VEX Connection Banner */}
+      {renderVexBanner()}
+
       {/* Step Guide Banner */}
       {showGuide && guide && guide.instructions.length > 0 && (
         <motion.div
@@ -241,12 +296,17 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
           )}
           {currentPage === 'biometric' && (
             <Page2Biometric
-              onScanComplete={handleScanComplete}
               backendVitals={backend.vitals}
               backendRppgWave={backend.rppgWave}
               backendM3Wave={vexM3Wave ?? backend.m3Wave}
               backendM4Wave={vexM4Wave ?? backend.m4Wave}
-              cameraConnected={backend.cameraConnected}
+            />
+          )}
+          {currentPage === 'vexbridge' && (
+            <PageVexBridge
+              vex={{ state: vex.state, connect: vex.connect, disconnect: vex.disconnect, calibrate: vex.calibrate }}
+              m3Wave={vexM3Wave}
+              m4Wave={vexM4Wave}
             />
           )}
           {currentPage === 'triage' && (
