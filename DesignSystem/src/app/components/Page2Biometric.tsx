@@ -9,6 +9,8 @@ interface VitalsData {
   bloodOxygen: number;
   hrvSdnn?: number;
   hrvRmssd?: number;
+  snr?: number;
+  signalQuality?: number;
 }
 
 interface Page2Props {
@@ -73,6 +75,7 @@ export function Page2Biometric({ backendVitals, backendRppgWave, backendM3Wave, 
     { label: 'Respiration', value: vitals.respiration > 0 ? Math.round(vitals.respiration) : null, unit: 'Br/min', icon: Gauge, color: '#0A84FF' },
     { label: 'Blood O₂', value: vitals.bloodOxygen > 0 ? Math.round(vitals.bloodOxygen) : null, unit: '% SpO2', icon: Droplets, color: '#30D158' },
     { label: 'HRV (SDNN)', value: (vitals as any).hrvSdnn > 0 ? (vitals as any).hrvSdnn : null, unit: 'ms', icon: Activity, color: '#BF5AF2' },
+    { label: 'Signal SNR', value: (vitals as any).snr > 0 ? (vitals as any).snr.toFixed(1) : null, unit: 'ratio', icon: Activity, color: '#FF9F0A' },
   ];
 
   const isMobile = useIsMobile();

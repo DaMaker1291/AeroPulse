@@ -440,6 +440,37 @@ export function extractRGB(imageData: ImageData, roi: { x: number; y: number; w:
   return { r: rs / count, g: gs / count, b: bs / count };
 }
 
+// Split a face ROI into upper (forehead/eyes) and lower (cheeks/nose) sub-ROIs.
+// Upper face typically has less motion artifact from talking/expression.
+export function splitFaceROI(
+  roi: { x: number; y: number; w: number; h: number },
+): { upper: { x: number; y: number; w: number; h: number }; lower: { x: number; y: number; w: number; h: number } } {
+  const upperH = roi.h * 0.4;
+  const lowerY = roi.y + roi.h * 0.15;
+  const lowerH = roi.h * 0.5;
+  return {
+    upper: { x: roi.x, y: roi.y, w: roi.w, h: Math.max(1, upperH) },
+    lower: { x: roi.x, y: Math.max(roi.y, lowerY), w: roi.w, h: Math.max(1, lowerH) },
+  };
+}
+
+// Extract RGB from the better of two zones: picks the zone with higher
+// red-green contrast (indicator of stronger pulse signal amplitude).
+export function extractRGBBestZone(
+  imageData: ImageData,
+  roi: { x: number; y: number; w: number; h: number },
+): { r: number; g: number; b: number; zoneUsed: string } {
+  const zones = splitFaceROI(roi);
+  const upper = extractRGBSkin(imageData, zones.upper);
+  const lower = extractRGBSkin(imageData, zones.lower);
+  // Pulse signal is strongest in green-red contrast
+  const upperQuality = Math.abs(upper.g - upper.r);
+  const lowerQuality = Math.abs(lower.g - lower.r);
+  return upperQuality >= lowerQuality
+    ? { ...upper, zoneUsed: 'upper' }
+    : { ...lower, zoneUsed: 'lower' };
+}
+
 // Skin-filtered RGB extraction: only includes pixels within skin color range
 // Uses simple RGB thresholds: R > 50, G > 30, B > 15, R > G, R > B
 // This avoids contamination from eyes, mouth, hair, and background
@@ -464,12 +495,14 @@ export function extractRGBSkin(imageData: ImageData, roi: { x: number; y: number
   return { r: rs / count, g: gs / count, b: bs / count };
 }
 
-// Normalize image data: apply contrast stretching + brightness normalization
-// to reduce the effect of lighting changes on rPPG signal
-export function normalizeImageData(imgData: ImageData): void {
+// Adaptive contrast enhancement: normalize brightness + stretch contrast
+// Uses per-channel gain to target 128 mean, then percentile-based stretching
+export function enhanceImageData(imgData: ImageData): void {
   const data = imgData.data;
   const n = data.length / 4;
   if (n < 10) return;
+
+  // Step 1: Gain-normalize each channel to mean 128
   let rSum = 0, gSum = 0, bSum = 0;
   for (let i = 0; i < data.length; i += 4) {
     rSum += data[i]; gSum += data[i + 1]; bSum += data[i + 2];
@@ -479,10 +512,42 @@ export function normalizeImageData(imgData: ImageData): void {
   const rGain = target / Math.max(rMean, 1);
   const gGain = target / Math.max(gMean, 1);
   const bGain = target / Math.max(bMean, 1);
+
+  // Step 2: Apply gain, collect histogram for contrast stretch
+  const histR = new Int32Array(256);
+  const histG = new Int32Array(256);
+  const histB = new Int32Array(256);
   for (let i = 0; i < data.length; i += 4) {
-    data[i] = Math.max(0, Math.min(255, Math.round(data[i] * rGain)));
-    data[i + 1] = Math.max(0, Math.min(255, Math.round(data[i + 1] * gGain)));
-    data[i + 2] = Math.max(0, Math.min(255, Math.round(data[i + 2] * bGain)));
+    const r = Math.max(0, Math.min(255, Math.round(data[i] * rGain)));
+    const g = Math.max(0, Math.min(255, Math.round(data[i + 1] * gGain)));
+    const b = Math.max(0, Math.min(255, Math.round(data[i + 2] * bGain)));
+    data[i] = r; data[i + 1] = g; data[i + 2] = b;
+    histR[r]++; histG[g]++; histB[b]++;
+  }
+
+  // Step 3: Find 5th and 95th percentile for contrast stretching
+  const lo = Math.round(n * 0.05);
+  const hi = Math.round(n * 0.95);
+  let cumR = 0, cumG = 0, cumB = 0;
+  let rLo = 0, rHi = 255, gLo = 0, gHi = 255, bLo = 0, bHi = 255;
+  for (let v = 0; v < 256; v++) {
+    cumR += histR[v]; cumG += histG[v]; cumB += histB[v];
+    if (cumR <= lo) rLo = v;
+    if (cumR >= hi && rHi === 255) rHi = v;
+    if (cumG <= lo) gLo = v;
+    if (cumG >= hi && gHi === 255) gHi = v;
+    if (cumB <= lo) bLo = v;
+    if (cumB >= hi && bHi === 255) bHi = v;
+  }
+  const rRange = Math.max(rHi - rLo, 1);
+  const gRange = Math.max(gHi - gLo, 1);
+  const bRange = Math.max(bHi - bLo, 1);
+
+  // Step 4: Stretch to full range
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = Math.max(0, Math.min(255, Math.round((data[i] - rLo) / rRange * 255)));
+    data[i + 1] = Math.max(0, Math.min(255, Math.round((data[i + 1] - gLo) / gRange * 255)));
+    data[i + 2] = Math.max(0, Math.min(255, Math.round((data[i + 2] - bLo) / bRange * 255)));
   }
 }
 

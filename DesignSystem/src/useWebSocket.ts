@@ -3,7 +3,7 @@ import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import {
   createBandpassFilter, applyFilterChain, computeHeartRate, computeRespirationRate, computeSpO2,
   extractRGB, extractRGBSkin, computeSkinROI, posProject, SignalBuffer, FACE_MESH_CONNECTIONS,
-  HRResult, computeHRQuality, adaptiveNoiseCancel, computeHRV, normalizeImageData,
+  HRResult, computeHRQuality, adaptiveNoiseCancel, computeHRV, enhanceImageData, extractRGBBestZone,
 } from './cameraPipeline';
 
 export interface VitalsData {
@@ -12,6 +12,8 @@ export interface VitalsData {
   bloodOxygen: number;
   hrvSdnn: number;
   hrvRmssd: number;
+  snr: number;
+  signalQuality: number;
 }
 
 export interface TriageData {
@@ -46,7 +48,7 @@ const INITIAL: BackendState = {
   targetStatus: 'standby',
   cameraConnected: false,
   faceTracked: false,
-  vitals: { heartRate: 0, respiration: 0, bloodOxygen: 0, hrvSdnn: 0, hrvRmssd: 0 },
+  vitals: { heartRate: 0, respiration: 0, bloodOxygen: 0, hrvSdnn: 0, hrvRmssd: 0, snr: 0, signalQuality: 0 },
   rppgWave: [],
   m3Wave: [],
   m4Wave: [],
@@ -100,6 +102,8 @@ export function useWebSocket(_url?: string) {
     let latestRespiration = 0;
     let latestHrvSdnn = 0;
     let latestHrvRmssd = 0;
+    let latestSnr = 0;
+    let latestSigQual = 0;
     let latestFreqs: number[] = [];
     let latestPower: number[] = [];
     let waveformIdx = 0;
@@ -220,10 +224,12 @@ export function useWebSocket(_url?: string) {
         }
 
         if (roi) {
-          // Apply per-frame brightness normalization to reduce lighting artifacts
-          normalizeImageData(imgData);
-          // Use skin-pixel-filtered extraction for cleaner PPG signal
-          const rgb = landmarks ? extractRGBSkin(imgData, roi) : extractRGB(imgData, roi);
+          // Apply adaptive contrast enhancement to maximize pulse signal amplitude
+          enhanceImageData(imgData);
+          // Multi-zone extraction: picks upper (forehead) or lower (cheeks) zone
+          // based on which has higher red-green contrast (= stronger pulse)
+          const rgbResult = landmarks ? extractRGBBestZone(imgData, roi) : extractRGB(imgData, roi);
+          const rgb = rgbResult;
           rBuf.push(rgb.r);
           gBuf.push(rgb.g);
           bBuf.push(rgb.b);
@@ -335,6 +341,10 @@ export function useWebSocket(_url?: string) {
             const hrvMetrics = computeHRV(cleaned, FFT_FS);
             latestHrvSdnn = hrvMetrics.sdnn;
             latestHrvRmssd = hrvMetrics.rmssd;
+
+            // Track SNR and quality for display (proves data is real)
+            latestSnr = Math.round(hr.snr * 10) / 10;
+            latestSigQual = Math.round(signalQuality * 100);
           } else {
             consecutiveBadReadings++;
             // Freeze display on last good reading — don't update latestHr
@@ -426,6 +436,8 @@ export function useWebSocket(_url?: string) {
             bloodOxygen: spo2Est,
             hrvSdnn: latestHrvSdnn,
             hrvRmssd: latestHrvRmssd,
+            snr: latestSnr,
+            signalQuality: latestSigQual,
           },
           rppgWave: rppgWav,
           m3Wave: [],
