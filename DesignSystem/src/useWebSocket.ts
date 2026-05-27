@@ -4,6 +4,7 @@ import {
   createBandpassFilter, applyFilterChain, computeHeartRate, computeRespirationRate, computeSpO2,
   extractRGB, extractRGBSkin, computeSkinROI, posProject, SignalBuffer, FACE_MESH_CONNECTIONS,
   HRResult, computeHRQuality, adaptiveNoiseCancel, computeHRV, enhanceImageData, extractRGBBestZone,
+  computeAugmentationIndex, computePulseWidth, detectPeaks,
 } from './cameraPipeline';
 
 export interface VitalsData {
@@ -14,6 +15,10 @@ export interface VitalsData {
   hrvRmssd: number;
   snr: number;
   signalQuality: number;
+  pulseWidthMs: number;
+  augIndex: number;
+  headStability: number;
+  blinkRate: number;
 }
 
 export interface TriageData {
@@ -48,7 +53,7 @@ const INITIAL: BackendState = {
   targetStatus: 'standby',
   cameraConnected: false,
   faceTracked: false,
-  vitals: { heartRate: 0, respiration: 0, bloodOxygen: 0, hrvSdnn: 0, hrvRmssd: 0, snr: 0, signalQuality: 0 },
+  vitals: { heartRate: 0, respiration: 0, bloodOxygen: 0, hrvSdnn: 0, hrvRmssd: 0, snr: 0, signalQuality: 0, pulseWidthMs: 0, augIndex: 0, headStability: 0, blinkRate: 0 },
   rppgWave: [],
   m3Wave: [],
   m4Wave: [],
@@ -104,6 +109,13 @@ export function useWebSocket(_url?: string) {
     let latestHrvRmssd = 0;
     let latestSnr = 0;
     let latestSigQual = 0;
+    let latestPulseWidth = 0;
+    let latestAugIndex = 0;
+    let latestHeadStability = 0;
+    let latestBlinkRate = 0;
+    // Track blink events with timestamp for rate calculation
+    let blinkTimestamps: number[] = [];
+    let lastBlinkTime = 0;
     let latestFreqs: number[] = [];
     let latestPower: number[] = [];
     let waveformIdx = 0;
@@ -201,6 +213,29 @@ export function useWebSocket(_url?: string) {
           }
           microMotionAccum += motionSum / landmarks.length;
           microMotionCount++;
+
+          // Blink detection from eye aspect ratio (EAR)
+          if (landmarks.length >= 468) {
+            const lEyeTop = landmarks[159], lEyeBot = landmarks[145];
+            const lEyeOut = landmarks[33], lEyeIn = landmarks[133];
+            const rEyeTop = landmarks[386], rEyeBot = landmarks[374];
+            const rEyeOut = landmarks[362], rEyeIn = landmarks[263];
+            const earL = Math.abs(lEyeTop.y - lEyeBot.y) / Math.max(Math.abs(lEyeOut.x - lEyeIn.x), 0.001);
+            const earR = Math.abs(rEyeTop.y - rEyeBot.y) / Math.max(Math.abs(rEyeOut.x - rEyeIn.x), 0.001);
+            const ear = (earL + earR) / 2;
+            if (prevEyeRatio > 0.22 && ear < 0.18) {
+              blinkCount++;
+              const now = performance.now();
+              if (now - lastBlinkTime > 200) { // Debounce: min 200ms between blinks
+                blinkTimestamps.push(now);
+                lastBlinkTime = now;
+                // Keep last 60s of blinks
+                const cutoff = now - 60000;
+                blinkTimestamps = blinkTimestamps.filter(t => t > cutoff);
+              }
+            }
+            prevEyeRatio = ear;
+          }
 
           // Store face mesh
           const flat: number[] = [];
@@ -345,6 +380,14 @@ export function useWebSocket(_url?: string) {
             // Track SNR and quality for display (proves data is real)
             latestSnr = Math.round(hr.snr * 10) / 10;
             latestSigQual = Math.round(signalQuality * 100);
+
+            // Pulse waveform features from the most recent detected pulse
+            const peaks = detectPeaks(win, FFT_FS);
+            if (peaks.length > 0) {
+              const lastPeak = peaks[peaks.length - 1];
+              latestPulseWidth = Math.round(computePulseWidth(win, FFT_FS, lastPeak) * 1000);
+              latestAugIndex = Math.round(computeAugmentationIndex(win, FFT_FS, lastPeak));
+            }
           } else {
             consecutiveBadReadings++;
             // Freeze display on last good reading — don't update latestHr
@@ -408,6 +451,27 @@ export function useWebSocket(_url?: string) {
           }
         }
 
+        // Head stability (inverse of centroid variance over 5s window)
+        const cArrX = centroidBufX.toArray();
+        const cArrY = centroidBufY.toArray();
+        if (cArrX.length > 10) {
+          let mx = 0, my = 0;
+          for (let i = 0; i < cArrX.length; i++) { mx += cArrX[i]; my += cArrY[i]; }
+          mx /= cArrX.length; my /= cArrY.length;
+          let vx = 0, vy = 0;
+          for (let i = 0; i < cArrX.length; i++) { vx += (cArrX[i] - mx) ** 2; vy += (cArrY[i] - my) ** 2; }
+          vx /= cArrX.length; vy /= cArrY.length;
+          const totalVar = Math.sqrt(vx + vy);
+          latestHeadStability = Math.max(0, Math.min(100, Math.round((1 - Math.min(totalVar, 0.05) / 0.05) * 100)));
+        }
+
+        // Blink rate (blinks per minute over last 60s window)
+        const blinkWindow = 60000;
+        const cutoff = now - blinkWindow;
+        blinkTimestamps = blinkTimestamps.filter(t => t > cutoff);
+        const elapsedMin = Math.max(0.1, (now - Math.max(cutoff, blinkTimestamps[0] || now)) / blinkWindow);
+        latestBlinkRate = Math.round(blinkTimestamps.length / elapsedMin);
+
         // VEX motor data comes from serial port (useVexSerial), not generated here
 
         // Hold last HR for 5s when face is lost, then clear
@@ -418,6 +482,10 @@ export function useWebSocket(_url?: string) {
             latestRespiration = 0;
             latestHrvSdnn = 0;
             latestHrvRmssd = 0;
+            latestPulseWidth = 0;
+            latestAugIndex = 0;
+            latestHeadStability = 0;
+            latestBlinkRate = 0;
             smoothedHr = 0;
             consecutiveBadReadings = 0;
           }
@@ -438,6 +506,10 @@ export function useWebSocket(_url?: string) {
             hrvRmssd: latestHrvRmssd,
             snr: latestSnr,
             signalQuality: latestSigQual,
+            pulseWidthMs: latestPulseWidth,
+            augIndex: latestAugIndex,
+            headStability: latestHeadStability,
+            blinkRate: latestBlinkRate,
           },
           rppgWave: rppgWav,
           m3Wave: [],
