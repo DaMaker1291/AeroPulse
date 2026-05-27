@@ -27,6 +27,11 @@
   =============================================================================*/
 
 #include "main.h"
+#include "pros/apix.h"
+#include <cstring>
+#include <cstdlib>
+#include <cstdio>
+#include <algorithm>
 
 pros::Motor gripLeft(3);
 pros::Motor gripRight(4);
@@ -135,9 +140,9 @@ void executeCommand(const char* cmd, int len) {
 // Task: reads commands from USB serial via serctl (non-blocking)
 void commandReader(void* param) {
   while (true) {
-    int c = serctl(1, NULL);  // SERCTL_GETCHAR = 1, non-blocking
-    if (c >= 0 && c < 256) {
-      char ch = (char)c;
+    char ch;
+    int ret = serctl(1, &ch);  // SERCTL_GETCHAR, returns 1 if char available
+    if (ret == 1) {
       if (ch == '\n' || ch == '\r') {
         if (cmdIdx > 0) {
           cmdLineBuf[cmdIdx] = '\0';
