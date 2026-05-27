@@ -19,6 +19,7 @@ export interface VitalsData {
   augIndex: number;
   headStability: number;
   blinkRate: number;
+  motionLevel: number;
 }
 
 export interface TriageData {
@@ -53,7 +54,7 @@ const INITIAL: BackendState = {
   targetStatus: 'standby',
   cameraConnected: false,
   faceTracked: false,
-  vitals: { heartRate: 0, respiration: 0, bloodOxygen: 0, hrvSdnn: 0, hrvRmssd: 0, snr: 0, signalQuality: 0, pulseWidthMs: 0, augIndex: 0, headStability: 0, blinkRate: 0 },
+  vitals: { heartRate: 0, respiration: 0, bloodOxygen: 0, hrvSdnn: 0, hrvRmssd: 0, snr: 0, signalQuality: 0, pulseWidthMs: 0, augIndex: 0, headStability: 0, blinkRate: 0, motionLevel: 0 },
   rppgWave: [],
   m3Wave: [],
   m4Wave: [],
@@ -148,6 +149,11 @@ export function useWebSocket(_url?: string) {
     let prevLowerLip = 0;
     let microMotionAccum = 0;
     let microMotionCount = 0;
+
+    // Per-frame motion rejection: bounding box center displacement
+    let prevFaceCx = -1, prevFaceCy = -1;
+    let latestMotionLevel = 0;
+    const motionLevelBuf = new SignalBuffer(FFT_FS * 5);
 
     // For intensity-based respiration
     const intBuf = new SignalBuffer(nBuf);
@@ -265,6 +271,18 @@ export function useWebSocket(_url?: string) {
           enhanceImageData(imgData);
           // Step 3: Multi-zone extraction (6 sub-regions, quality-weighted)
           const rgb = landmarks ? extractRGBMultiZone(imgData, roi) : extractRGB(imgData, roi);
+
+          // Step 4: Track face bounding box center displacement for motion quality
+          const faceCx = roi.x + roi.w / 2;
+          const faceCy = roi.y + roi.h / 2;
+          let frameMotionWeight = 1.0;
+          if (prevFaceCx >= 0) {
+            const disp = Math.sqrt((faceCx - prevFaceCx) ** 2 + (faceCy - prevFaceCy) ** 2);
+            frameMotionWeight = Math.max(0, 1 - disp / 0.04);
+          }
+          prevFaceCx = faceCx;
+          prevFaceCy = faceCy;
+          motionLevelBuf.push(1 - frameMotionWeight);
           rBuf.push(rgb.r);
           gBuf.push(rgb.g);
           bBuf.push(rgb.b);
@@ -311,6 +329,16 @@ export function useWebSocket(_url?: string) {
         // Heart rate every 1 second, minimum 6s of data
         const motionScore = motionRmsCount > 0 ? motionRmsAccum / motionRmsCount : 0;
         const motionHeavy = motionScore > MOTION_BLEND_THRESHOLD;
+
+        // Compute motion level (0-100) from recent frame-to-frame displacement buffer
+        const mArr = motionLevelBuf.toArray();
+        if (mArr.length > 10) {
+          let mSum = 0;
+          for (let i = 0; i < mArr.length; i++) mSum += mArr[i];
+          latestMotionLevel = Math.round((mSum / mArr.length) * 100);
+        } else {
+          latestMotionLevel = 0;
+        }
 
         if (faceLocked && frameCount > FFT_FS * WINDOW_SECS && now - lastHrTime > 1000) {
           lastHrTime = now;
@@ -510,6 +538,7 @@ export function useWebSocket(_url?: string) {
             augIndex: latestAugIndex,
             headStability: latestHeadStability,
             blinkRate: latestBlinkRate,
+            motionLevel: latestMotionLevel,
           },
           rppgWave: rppgWav,
           m3Wave: [],

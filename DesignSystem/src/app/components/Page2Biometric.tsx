@@ -15,6 +15,7 @@ interface VitalsData {
   augIndex?: number;
   headStability?: number;
   blinkRate?: number;
+  motionLevel?: number;
 }
 
 interface Page2Props {
@@ -81,7 +82,7 @@ export function Page2Biometric({ backendVitals, backendRppgWave, backendM3Wave, 
     { label: 'Blood O₂', value: vitals.bloodOxygen > 0 ? Math.round(vitals.bloodOxygen) : null, unit: '% SpO2', icon: Droplets, color: '#30D158' },
     { label: 'HRV (SDNN)', value: v.hrvSdnn > 0 ? v.hrvSdnn : null, unit: 'ms', icon: Activity, color: '#BF5AF2' },
     { label: 'Pulse Width', value: v.pulseWidthMs > 0 ? v.pulseWidthMs : null, unit: 'ms', icon: Activity, color: '#30D158' },
-    { label: 'Aug. Index', value: v.augIndex > 0 ? v.augIndex : null, unit: '%', icon: Activity, color: '#FF9F0A' },
+    { label: 'Motion Level', value: v.motionLevel !== undefined ? v.motionLevel : null, unit: '%', icon: Activity, color: v.motionLevel > 30 ? '#FF453A' : v.motionLevel > 15 ? '#FF9F0A' : '#30D158' },
     { label: 'Blink Rate', value: v.blinkRate > 0 ? v.blinkRate : null, unit: '/min', icon: Activity, color: '#0A84FF' },
     { label: 'Head Stability', value: v.headStability > 0 ? `${v.headStability}%` : null, unit: '', icon: Activity, color: '#30D158' },
     { label: 'Signal SNR', value: v.snr > 0 ? v.snr.toFixed(1) : null, unit: 'ratio', icon: Activity, color: '#FF9F0A' },
