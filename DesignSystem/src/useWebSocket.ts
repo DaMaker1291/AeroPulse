@@ -62,11 +62,11 @@ const FFT_FS = 60;
 const STATE_INTERVAL = 80;
 const WAVE_LEN = 60;
 const HR_EMA_ALPHA = 0.55;
-const HR_QUALITY_THRESHOLD = 0.08;
-const HR_STABILITY_REQUIRED = 1;
-const HR_MIN_ACCEPTABLE = 40;
-const HR_MAX_ACCEPTABLE = 210;
-const HR_CHANGE_MAX = 30;
+const HR_QUALITY_THRESHOLD = 0.30;
+const HR_STABILITY_REQUIRED = 3;
+const HR_MIN_ACCEPTABLE = 45;
+const HR_MAX_ACCEPTABLE = 180;
+const HR_CHANGE_MAX = 15;
 const MOTION_BLEND_THRESHOLD = 0.15;
 const PROC_W = 320;
 const PROC_H = 240;
@@ -323,11 +323,8 @@ export function useWebSocket(_url?: string) {
             latestRespiration = respRate > 3 && respRate < 30 ? Math.round(respRate) : 0;
           } else {
             consecutiveBadReadings++;
-            // After 5 consecutive bad readings, slowly drift toward 0
-            if (consecutiveBadReadings > 5 && smoothedHr > 0) {
-              smoothedHr = Math.max(0, smoothedHr - 1);
-              latestHr = Math.round(smoothedHr);
-            }
+            // Freeze display on last good reading — don't update latestHr
+            // Only clear when face is lost (handled below)
           }
 
           // Always update FFT data for display, but quality-gate HR
@@ -387,10 +384,9 @@ export function useWebSocket(_url?: string) {
           }
         }
 
-        const m3Val = Math.sin(posWfIdx * 0.098) * sigQual * 22 + 48;
-        const m4Val = Math.cos(posWfIdx * 0.082) * sigQual * 17 + 52;
+        // VEX motor data comes from serial port (useVexSerial), not generated here
 
-        // Hold last HR for 5s when face is lost, then decay
+        // Hold last HR for 5s when face is lost, then clear
         if (!faceLocked) {
           const timeSinceFace = (performance.now() - lastFaceTime);
           if (timeSinceFace > 5000) {
@@ -414,8 +410,8 @@ export function useWebSocket(_url?: string) {
             bloodOxygen: spo2Est,
           },
           rppgWave: rppgWav,
-          m3Wave: [m3Val],
-          m4Wave: [m4Val],
+          m3Wave: [],
+          m4Wave: [],
           triage: {
             bilateralSymmetry: symmetry,
             neuromuscularLag: Math.round(microMotionNorm),

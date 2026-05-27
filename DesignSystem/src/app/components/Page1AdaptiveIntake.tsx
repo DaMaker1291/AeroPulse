@@ -177,10 +177,10 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
   const isMobile = useIsMobile();
 
   return (
-    <div className={`${isMobile ? 'flex flex-col gap-3' : 'flex gap-4'} ${isMobile ? '' : 'flex-1 min-h-0'}`}>
+    <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0">
 
-      {/* AI Clinical Screener — takes 2/3 width on desktop */}
-      <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] flex flex-col overflow-y-auto ${isMobile ? 'flex-shrink-0' : 'flex-[2_2_0%] min-w-0'}`}>
+      {/* AI Clinical Screener — 2/3 on desktop, full on mobile */}
+      <div className="bg-[#16161A] rounded-2xl border border-[#1E1E22] flex flex-col overflow-y-auto w-full lg:flex-[2] min-w-0">
 
         {/* Card header */}
         <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-[#1E1E22] flex items-center justify-between">
@@ -325,8 +325,8 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
         </div>
       </div>
 
-      {/* Optical Targeting Viewport — takes 1/3 width on desktop */}
-      <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] flex flex-col overflow-hidden ${isMobile ? 'flex-1 min-h-[250px]' : 'flex-[1_1_0%] min-w-0'}`}>
+      {/* Optical Targeting Viewport — 1/3 on desktop, full on mobile */}
+      <div className="bg-[#16161A] rounded-2xl border border-[#1E1E22] flex flex-col overflow-hidden w-full lg:flex-[1] min-w-0 min-h-[200px] lg:min-h-0">
 
         {/* Card header */}
         <div className="px-4 sm:px-6 pt-3 sm:pt-5 pb-2 sm:pb-4 border-b border-[#1E1E22] flex items-center justify-between">

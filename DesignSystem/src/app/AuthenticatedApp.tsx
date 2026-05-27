@@ -323,6 +323,12 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
               reasonForVisit={patientInfo.reasonForVisit}
               patientAge={patientInfo.age}
               patientGender={patientInfo.gender}
+              vexTorque={vex.state.data ? {
+                m3Torque: vex.state.data.m3Torque,
+                m3Force: vex.state.data.m3Force,
+                m4Torque: vex.state.data.m4Torque,
+                m4Force: vex.state.data.m4Force,
+              } : null}
             />
           )}
           {currentPage === 'enterprise' && (

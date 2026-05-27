@@ -39,21 +39,7 @@ export function Page2Biometric({ backendVitals, backendRppgWave, backendM3Wave, 
     }
   }, [backendRppgWave?.[backendRppgWave.length - 1]]);
 
-  // Gentle placeholder wave when no real data — uses physiological-like multi-sine + noise
-  useEffect(() => {
-    if (!backendRppgWave || backendRppgWave.length === 0) {
-      const interval = setInterval(() => {
-        tickRef.current += 1;
-        const t = tickRef.current;
-        setWaveData1(prev => {
-          const next = [...prev, { time: t, value: 50 + 8 * Math.sin(t * 0.12) + 3 * Math.sin(t * 0.07) + (Math.random() - 0.5) * 4 }];
-          if (next.length > 60) next.shift();
-          return next;
-        });
-      }, 100);
-      return () => clearInterval(interval);
-    }
-  }, [backendRppgWave?.length ?? 0]);
+  // No placeholder — only show real data from camera rPPG pipeline
 
   // Stable mechanical waveform
   useEffect(() => {
@@ -68,24 +54,7 @@ export function Page2Biometric({ backendVitals, backendRppgWave, backendM3Wave, 
     }
   }, [backendM3Wave?.[backendM3Wave.length - 1], backendM4Wave?.[backendM4Wave.length - 1]]);
 
-  // Gentle placeholder mechanical wave when no real data
-  useEffect(() => {
-    if (!backendM3Wave || backendM3Wave.length === 0) {
-      const interval = setInterval(() => {
-        const t = tickRef.current;
-        setWaveData2(prev => {
-          const next = [...prev, {
-            time: t,
-            leftHand: 50 + 6 * Math.sin(t * 0.1) + 2 * Math.sin(t * 0.06) + (Math.random() - 0.5) * 3,
-            rightHand: 50 + 7 * Math.sin(t * 0.09 + 0.4) + 2 * Math.sin(t * 0.05) + (Math.random() - 0.5) * 3,
-          }];
-          if (next.length > 60) next.shift();
-          return next;
-        });
-      }, 100);
-      return () => clearInterval(interval);
-    }
-  }, [!backendM3Wave?.length]);
+  // VEX motor wave data comes from serial port (useVexSerial), not generated here
 
   useEffect(() => {
     if (backendVitals && backendVitals.heartRate > 0) {
@@ -97,12 +66,9 @@ export function Page2Biometric({ backendVitals, backendRppgWave, backendM3Wave, 
     }
   }, [backendVitals]);
 
-  const bpSystolic = vitals.heartRate > 0 ? Math.round(90 + vitals.heartRate * 0.35) : 0;
-  const bpDiastolic = vitals.heartRate > 0 ? Math.round(60 + vitals.heartRate * 0.18) : 0;
-
   const vitalCards = [
     { label: 'Heart Rate', value: vitals.heartRate > 0 ? Math.round(vitals.heartRate) : null, unit: 'BPM', icon: Heart, color: '#FF453A' },
-    { label: 'Blood Pressure', value: vitals.heartRate > 0 ? `${bpSystolic}/${bpDiastolic}` : null, unit: 'mmHg', icon: Gauge, color: '#0A84FF' },
+    { label: 'Respiration', value: vitals.respiration > 0 ? Math.round(vitals.respiration) : null, unit: 'Br/min', icon: Gauge, color: '#0A84FF' },
     { label: 'Blood O₂', value: vitals.bloodOxygen > 0 ? Math.round(vitals.bloodOxygen) : null, unit: '% SpO2', icon: Droplets, color: '#30D158' },
   ];
 

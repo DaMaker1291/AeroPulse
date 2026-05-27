@@ -25,6 +25,13 @@ interface FftData {
   power: number[];
 }
 
+interface VexTorqueData {
+  m3Torque: number;
+  m3Force: number;
+  m4Torque: number;
+  m4Force: number;
+}
+
 interface Page3Props {
   backendTriage?: TriageData;
   backendFft?: FftData;
@@ -32,6 +39,7 @@ interface Page3Props {
   reasonForVisit?: string;
   patientAge?: string;
   patientGender?: string;
+  vexTorque?: VexTorqueData | null;
 }
 
 const DISCLAIMER = 'This analysis is derived from real-time camera-based rPPG measurements and facial landmark tracking. It does not constitute a medical diagnosis. All findings must be confirmed by a qualified healthcare professional.';
@@ -117,7 +125,7 @@ function generateDiagnosis(vitals: VitalsData, triage: TriageData | undefined, r
   return lines;
 }
 
-export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonForVisit, patientAge, patientGender }: Page3Props) {
+export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonForVisit, patientAge, patientGender, vexTorque }: Page3Props) {
   const isMobile = useIsMobile();
   const hasData = backendVitals?.heartRate && backendVitals.heartRate > 0;
   const env = useEnvironmentalData();
@@ -223,20 +231,14 @@ export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonFo
         if (info.length) para(info.join('  |  '));
       }
 
-      // ── Vitals (real data) ──
+      // ── Vitals (measured via rPPG) ──
       section('Vitals (measured via rPPG)');
       const hasAnyVital = backendVitals && (backendVitals.heartRate > 0 || backendVitals.respiration > 0);
       if (hasAnyVital) {
-        if (backendVitals.heartRate > 0) {
-          kv('Heart Rate:', `${Math.round(backendVitals.heartRate)} BPM`);
-          const bpSys = Math.round(90 + backendVitals.heartRate * 0.35);
-          const bpDia = Math.round(60 + backendVitals.heartRate * 0.18);
-          kv('Blood Pressure:', `${bpSys}/${bpDia} mmHg`, '(estimated from HR)');
-        }
-        if (backendVitals.respiration > 0) {
-          kv('Respiration Rate:', `${Math.round(backendVitals.respiration)} Br/min`);
-        }
-        para('Note: Core temperature is not included as it cannot be measured from a consumer webcam.', { size: 8, color: [140, 140, 145] });
+        if (backendVitals.heartRate > 0) kv('Heart Rate:', `${Math.round(backendVitals.heartRate)} BPM`);
+        if (backendVitals.respiration > 0) kv('Respiration Rate:', `${Math.round(backendVitals.respiration)} Br/min`);
+        if (backendVitals.bloodOxygen > 0) kv('Blood O₂:', `${Math.round(backendVitals.bloodOxygen)}% SpO2`);
+        para('Blood pressure cannot be measured from a consumer webcam. Use a standard cuff for BP.', { size: 8, color: [140, 140, 145] });
       } else {
         para('No vital data recorded. Complete a biometric scan first.', { color: [180, 80, 0] });
       }
@@ -250,6 +252,18 @@ export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonFo
         kv('Facial Micro-motion:', `${backendTriage.neuromuscularLag}`);
         kv('Vascular Compliance:', `${backendTriage.vascularCompliance}%`);
         kv('Head Movement Peak:', `${backendTriage.tremorPeakHz.toFixed(1)} Hz`);
+      }
+
+      // ── VEX Grip Torque Data ──
+      if (vexTorque && (vexTorque.m3Torque > 0 || vexTorque.m4Torque > 0)) {
+        section('Grip Force Measurement (VEX Brain)');
+        para('Grip force was measured via VEX V5 Brain with 18:1 cartridge gears and ~2 cm lever arm.', { size: 9, color: [100, 100, 105] });
+        y += 1;
+        kv('Left Motor Torque:', `${vexTorque.m3Torque.toFixed(2)} Nm`);
+        kv('Left Force Estimate:', `${vexTorque.m3Force.toFixed(2)} N`);
+        kv('Right Motor Torque:', `${vexTorque.m4Torque.toFixed(2)} Nm`);
+        kv('Right Force Estimate:', `${vexTorque.m4Force.toFixed(2)} N`);
+        y += 2;
       }
 
       // ── Physiological Observations ──
@@ -279,7 +293,7 @@ export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonFo
       toast.error('PDF Export Failed', { description: String(err) });
       console.error('PDF generation error:', err);
     }
-  }, [backendVitals, backendTriage, diagnosis, alertLevel, vitalCards, hasPsdData, psdData, reasonForVisit, patientAge, patientGender]);
+  }, [backendVitals, backendTriage, diagnosis, alertLevel, vitalCards, hasPsdData, psdData, reasonForVisit, patientAge, patientGender, vexTorque]);
 
   return (
     <div className={`flex flex-col gap-3 sm:gap-4 ${isMobile ? 'pb-4' : 'h-full overflow-auto'}`}>
