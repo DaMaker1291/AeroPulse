@@ -313,8 +313,6 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
                 runDiagnose: vex.runDiagnose,
                 sendCommand: vex.sendCommand,
               }}
-              m3Wave={vexM3Wave}
-              m4Wave={vexM4Wave}
             />
           )}
           {currentPage === 'triage' && (

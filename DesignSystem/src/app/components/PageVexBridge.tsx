@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Usb, Cable, Activity, Gauge, RotateCw, AlertTriangle, CheckCircle2, Plug, ChevronRight, WifiOff, Stethoscope, ArrowLeftRight, Monitor } from 'lucide-react';
+import { Usb, Cable, Activity, RotateCw, AlertTriangle, CheckCircle2, Plug, ChevronRight, WifiOff, Stethoscope, ArrowLeftRight, Monitor } from 'lucide-react';
 import { useIsMobile } from './ui/use-mobile';
 import type { VexState, VexDiagnosis } from '../../useVexSerial';
 
@@ -14,11 +14,9 @@ interface PageVexProps {
     runDiagnose: () => void;
     sendCommand: (cmd: string) => void;
   };
-  m3Wave?: number[];
-  m4Wave?: number[];
 }
 
-export function PageVexBridge({ vex, m3Wave, m4Wave }: PageVexProps) {
+export function PageVexBridge({ vex }: PageVexProps) {
   const isMobile = useIsMobile();
   const hasData = vex.state.connected && vex.state.data !== null;
   const diag = vex.state.diagnosis;
@@ -81,119 +79,60 @@ export function PageVexBridge({ vex, m3Wave, m4Wave }: PageVexProps) {
         </div>
       </div>
 
-      {/* Live Data Gauges */}
-      <div className={`bg-[#16161A] rounded-2xl border border-[#1E1E22] p-3 sm:p-5 ${isMobile ? '' : 'flex-1 min-h-0'}`}>
-        <div className="flex items-center gap-2 mb-3 sm:mb-4">
-          <Gauge className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#0A84FF]" />
-          <span className="text-[12px] sm:text-[13px] font-semibold text-white">Live Motor Data</span>
-          {hasData && (
-            <span className="ml-auto text-[10px] text-[#8E8E93] font-mono tracking-wider">
-              {vex.state.data!.m3Pos.toFixed(1)}° / {vex.state.data!.m4Pos.toFixed(1)}°
-            </span>
+      {/* Command Controls — visible whenever connected */}
+      {vex.state.connected && (
+        <div className="bg-[#16161A] rounded-2xl border border-[#1E1E22] p-3 sm:p-5 flex-shrink-0">
+          <div className="flex items-center gap-2 mb-3">
+            <Stethoscope className="w-3.5 h-3.5 text-[#30D158]" />
+            <span className="text-[11px] sm:text-[12px] font-semibold text-white">Motor Commands</span>
+            {hasData && (
+              <span className="ml-auto text-[10px] text-[#8E8E93] font-mono">
+                {vex.state.data!.m3Pos.toFixed(1)}° / {vex.state.data!.m4Pos.toFixed(1)}°
+              </span>
+            )}
+          </div>
+
+          {/* SETPOS input */}
+          <div className="flex items-center gap-2 mb-3">
+            <input type="number" value={targetPos} onChange={e => setTargetPos(e.target.value)}
+              className="w-20 h-8 bg-[#16161A] border border-[#2C2C2E] rounded-lg px-2 text-white text-[12px] font-mono focus:outline-none focus:border-[#0A84FF]" />
+            <span className="text-[10px] text-[#8E8E93] font-mono">deg</span>
+            <button onClick={() => vex.setPosition(parseFloat(targetPos) || 0)}
+              className="h-8 px-3 rounded-lg bg-[#0A84FF]/10 border border-[#0A84FF]/20 text-[#0A84FF] text-[10px] font-semibold hover:bg-[#0A84FF]/20 transition-colors">
+              SETPOS
+            </button>
+            <button onClick={() => { setTargetPos('0'); vex.setPosition(0); }}
+              className="h-8 px-3 rounded-lg bg-[#8E8E93]/10 border border-[#8E8E93]/20 text-[#8E8E93] text-[10px] font-semibold hover:bg-[#8E8E93]/20 transition-colors ml-auto">
+              Return 0°
+            </button>
+          </div>
+
+          {/* DIAGNOSE button */}
+          <button onClick={vex.runDiagnose}
+            className="w-full py-2.5 rounded-xl bg-[#30D158]/10 border border-[#30D158]/20 text-[#30D158] text-[11px] font-semibold hover:bg-[#30D158]/20 transition-colors flex items-center justify-center gap-2">
+            <ArrowLeftRight className="w-3.5 h-3.5" />
+            Run Full Diagnosis (Tension + Compression)
+          </button>
+
+          {/* Empty state when connected but no data yet */}
+          {!hasData && (
+            <div className="flex items-center justify-center py-4 mt-2 text-[#FF9F0A]/60">
+              <Activity className="w-4 h-4 mr-2" />
+              <span className="text-[10px] sm:text-[11px] font-mono">Connected — waiting for motor data stream...</span>
+            </div>
           )}
         </div>
+      )}
 
-        {!hasData && !vex.state.connected && (
+      {/* Not connected */}
+      {!vex.state.connected && (
+        <div className="bg-[#16161A] rounded-2xl border border-[#1E1E22] p-3 sm:p-5 flex-shrink-0">
           <div className="flex flex-col items-center justify-center py-8 sm:py-12 text-[#8E8E93]/40">
             <WifiOff className="w-8 h-8 sm:w-10 sm:h-10 mb-2" />
             <span className="text-[11px] sm:text-[12px] font-mono">Not connected</span>
           </div>
-        )}
-        {!hasData && vex.state.connected && (
-          <div className="flex flex-col items-center justify-center py-8 sm:py-12 text-[#FF9F0A]/60">
-            <Activity className="w-8 h-8 sm:w-10 sm:h-10 mb-2" />
-            <span className="text-[11px] sm:text-[12px] font-mono">Waiting for data...</span>
-          </div>
-        )}
-
-        {hasData && (
-          <div className="space-y-3">
-            <div className={`grid ${isMobile ? 'grid-cols-2 gap-2' : 'grid-cols-2 gap-4'}`}>
-              {/* Left Motor */}
-              <div className="bg-[#0B0B0D] rounded-xl border border-[#1E1E22] p-3 sm:p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] sm:text-[11px] text-[#8E8E93] tracking-widest uppercase font-medium">Left Motor</span>
-                  <span className="text-[9px] sm:text-[10px] text-[#8E8E93] font-mono">M3</span>
-                </div>
-                <div className="flex items-baseline gap-1.5 sm:gap-2 mb-1">
-                  <span className="text-[24px] sm:text-[36px] font-bold text-white leading-none font-mono">{vex.state.data!.m3Torque.toFixed(2)}</span>
-                  <span className="text-[10px] sm:text-[12px] text-[#8E8E93] font-medium">Nm</span>
-                </div>
-                <div className="flex items-baseline gap-1.5 mb-2">
-                  <span className="text-[14px] sm:text-[20px] font-bold text-[#0A84FF] leading-none font-mono">{vex.state.data!.m3Force.toFixed(2)}</span>
-                  <span className="text-[9px] sm:text-[10px] text-[#8E8E93] font-medium">N force</span>
-                </div>
-                <div className="h-2 bg-[#1E1E22] rounded-full overflow-hidden mb-1">
-                  <div className="h-full rounded-full bg-[#0A84FF]" style={{
-                    width: `${Math.min(100, Math.abs(vex.state.data!.m3Torque) * 50)}%`,
-                    opacity: 0.7, transition: 'width 0.1s ease',
-                  }} />
-                </div>
-                <div className="flex justify-between text-[8px] text-[#8E8E93]/60 font-mono">
-                  <span>CUR: {vex.state.data!.m3Current.toFixed(2)}A</span>
-                  <span>POS: {vex.state.data!.m3Pos.toFixed(1)}°</span>
-                </div>
-              </div>
-
-              {/* Right Motor */}
-              <div className="bg-[#0B0B0D] rounded-xl border border-[#1E1E22] p-3 sm:p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] sm:text-[11px] text-[#8E8E93] tracking-widest uppercase font-medium">Right Motor</span>
-                  <span className="text-[9px] sm:text-[10px] text-[#8E8E93] font-mono">M4</span>
-                </div>
-                <div className="flex items-baseline gap-1.5 sm:gap-2 mb-1">
-                  <span className="text-[24px] sm:text-[36px] font-bold text-white leading-none font-mono">{vex.state.data!.m4Torque.toFixed(2)}</span>
-                  <span className="text-[10px] sm:text-[12px] text-[#8E8E93] font-medium">Nm</span>
-                </div>
-                <div className="flex items-baseline gap-1.5 mb-2">
-                  <span className="text-[14px] sm:text-[20px] font-bold text-[#BF5AF2] leading-none font-mono">{vex.state.data!.m4Force.toFixed(2)}</span>
-                  <span className="text-[9px] sm:text-[10px] text-[#8E8E93] font-medium">N force</span>
-                </div>
-                <div className="h-2 bg-[#1E1E22] rounded-full overflow-hidden mb-1">
-                  <div className="h-full rounded-full bg-[#BF5AF2]" style={{
-                    width: `${Math.min(100, Math.abs(vex.state.data!.m4Torque) * 50)}%`,
-                    opacity: 0.7, transition: 'width 0.1s ease',
-                  }} />
-                </div>
-                <div className="flex justify-between text-[8px] text-[#8E8E93]/60 font-mono">
-                  <span>CUR: {vex.state.data!.m4Current.toFixed(2)}A</span>
-                  <span>POS: {vex.state.data!.m4Pos.toFixed(1)}°</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Command Controls */}
-            <div className="bg-[#0B0B0D] rounded-xl border border-[#1E1E22] p-3 sm:p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Stethoscope className="w-3.5 h-3.5 text-[#30D158]" />
-                <span className="text-[11px] sm:text-[12px] font-semibold text-white">Motor Commands</span>
-              </div>
-
-              {/* SETPOS input */}
-              <div className="flex items-center gap-2 mb-3">
-                <input type="number" value={targetPos} onChange={e => setTargetPos(e.target.value)}
-                  className="w-20 h-8 bg-[#16161A] border border-[#2C2C2E] rounded-lg px-2 text-white text-[12px] font-mono focus:outline-none focus:border-[#0A84FF]" />
-                <span className="text-[10px] text-[#8E8E93] font-mono">deg</span>
-                <button onClick={() => vex.setPosition(parseFloat(targetPos) || 0)}
-                  className="h-8 px-3 rounded-lg bg-[#0A84FF]/10 border border-[#0A84FF]/20 text-[#0A84FF] text-[10px] font-semibold hover:bg-[#0A84FF]/20 transition-colors">
-                  SETPOS
-                </button>
-                <button onClick={() => { setTargetPos('0'); vex.setPosition(0); }}
-                  className="h-8 px-3 rounded-lg bg-[#8E8E93]/10 border border-[#8E8E93]/20 text-[#8E8E93] text-[10px] font-semibold hover:bg-[#8E8E93]/20 transition-colors ml-auto">
-                  Return 0°
-                </button>
-              </div>
-
-              {/* DIAGNOSE button */}
-              <button onClick={vex.runDiagnose}
-                className="w-full py-2.5 rounded-xl bg-[#30D158]/10 border border-[#30D158]/20 text-[#30D158] text-[11px] font-semibold hover:bg-[#30D158]/20 transition-colors flex items-center justify-center gap-2">
-                <ArrowLeftRight className="w-3.5 h-3.5" />
-                Run Full Diagnosis (Tension + Compression)
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Diagnosis Results */}
       {diag && (
@@ -226,7 +165,7 @@ export function PageVexBridge({ vex, m3Wave, m4Wave }: PageVexProps) {
         </motion.div>
       )}
 
-      {/* Setup Steps */}
+      {/* Operation Guide */}
       <div className="bg-[#16161A] rounded-2xl border border-[#1E1E22] p-3 sm:p-5 flex-shrink-0">
         <div className="flex items-center gap-2 mb-3 sm:mb-4">
           <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#30D158]" />
@@ -236,12 +175,11 @@ export function PageVexBridge({ vex, m3Wave, m4Wave }: PageVexProps) {
           {[
             { ic: Monitor, label: 'Upload Firmware', detail: 'pros build && pros upload — loop starts instantly' },
             { ic: Usb, label: 'Connect USB', detail: 'Keep VEX Brain connected via USB-C to computer' },
-            { ic: Plug, label: 'Click "Connect VEX Brain"', detail: 'Select the VEX Communications port from browser list' },
-            { ic: Activity, label: 'Verify', detail: 'Turn motor by hand — resistance + live torque/force data' },
+            { ic: Plug, label: 'Click "Connect VEX Brain"', detail: 'Previously-authorized ports connect automatically' },
             { ic: ArrowLeftRight, label: 'Run Diagnosis', detail: 'Click "Run Full Diagnosis" — moves to ±45°, measures torque' },
           ].map((s, i) => {
             const Icon = s.ic;
-            const done = i === 2 ? vex.state.connected : i === 3 ? hasData : false;
+            const done = i === 2 ? vex.state.connected : false;
             return (
               <div key={i} className={`flex items-start gap-2.5 p-2 sm:p-3 rounded-xl ${done ? 'bg-[#30D158]/05' : 'bg-[#0B0B0D]'} border ${done ? 'border-[#30D158]/10' : 'border-[#1E1E22]'}`}>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${done ? 'bg-[#30D158]/15' : 'bg-[#1E1E22]'}`}>
@@ -266,10 +204,9 @@ export function PageVexBridge({ vex, m3Wave, m4Wave }: PageVexProps) {
         </div>
         <div className="space-y-1.5">
           {[
-            'New firmware starts streaming ~1s after upload — no screen tapping needed',
-            'Motor feels stiff (position-hold PID) — resistance when turned = working',
+            'New firmware streams ~1s after upload — no screen tapping needed',
+            'Motor uses BRAKE mode: gentle resistance when turned by hand',
             'Use Chrome/Edge with HTTPS or localhost for Web Serial API',
-            'If "no data" shows raw bytes > 0, the protocol is custom — need USB-serial adapter',
             'Send SETPOS:90 to move, DIAGNOSE for full tension/compression cycle',
           ].map((tip, i) => (
             <div key={i} className="flex items-start gap-2 text-[10px] sm:text-[11px] text-[#8E8E93]">
