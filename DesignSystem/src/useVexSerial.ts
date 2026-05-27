@@ -75,128 +75,106 @@ export function useVexSerial() {
   const parseDiagnosisLine = useCallback((line: string): Partial<VexDiagnosis> | null => {
     if (line.startsWith('TENSION:')) {
       const parts = line.slice(8).split(',');
-      if (parts.length >= 2) {
-        return { tensionTorqueL: parseFloat(parts[0]), tensionTorqueR: parseFloat(parts[1]) };
-      }
+      if (parts.length >= 2) return { tensionTorqueL: parseFloat(parts[0]), tensionTorqueR: parseFloat(parts[1]) };
     }
     if (line.startsWith('COMPRESSION:')) {
       const parts = line.slice(12).split(',');
-      if (parts.length >= 2) {
-        return { compressionTorqueL: parseFloat(parts[0]), compressionTorqueR: parseFloat(parts[1]) };
-      }
+      if (parts.length >= 2) return { compressionTorqueL: parseFloat(parts[0]), compressionTorqueR: parseFloat(parts[1]) };
     }
     return null;
   }, []);
 
+  // Core serial read/write loop for a given port
+  const startPortSession = useCallback(async (port: SerialPort) => {
+    portRef.current = port;
+    const portInfo = port.getInfo?.() ?? {};
+    const portLabel = portInfo.usbProductId
+      ? `USB VID:${portInfo.usbVendorId} PID:${portInfo.usbProductId}`
+      : `Serial Port`;
+
+    setState(s => ({ ...s, connected: true, portInfo: portLabel, streaming: true, error: null }));
+
+    const textDecoder = new TextDecoderStream();
+    port.readable.pipeTo(textDecoder.writable).catch(() => {});
+    const reader = textDecoder.readable.getReader();
+    readerRef.current = reader;
+    runningRef.current = true;
+
+    const writer = port.writable.getWriter();
+    writerRef.current = writer;
+
+    let buf = '';
+    let totalBytes = 0;
+    let firstDataTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      setState(s => s.connected ? { ...s, error: `Connected but no data (${totalBytes} raw bytes). Is bridge firmware running?` } : s);
+    }, 8000);
+
+    while (runningRef.current) {
+      try {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+
+        totalBytes += value.length;
+        buf += value;
+        while (buf.includes('\n')) {
+          const nlIdx = buf.indexOf('\n');
+          const line = buf.slice(0, nlIdx).trim();
+          buf = buf.slice(nlIdx + 1);
+
+          if (line.length === 0) continue;
+          if (line.startsWith('ACK:')) continue;
+
+          const diag = parseDiagnosisLine(line);
+          if (diag) {
+            setState(s => ({
+              ...s,
+              diagnosis: {
+                tensionTorqueL: diag.tensionTorqueL ?? s.diagnosis?.tensionTorqueL ?? 0,
+                tensionTorqueR: diag.tensionTorqueR ?? s.diagnosis?.tensionTorqueR ?? 0,
+                compressionTorqueL: diag.compressionTorqueL ?? s.diagnosis?.compressionTorqueL ?? 0,
+                compressionTorqueR: diag.compressionTorqueR ?? s.diagnosis?.compressionTorqueR ?? 0,
+              },
+            }));
+            continue;
+          }
+
+          const parsed = parseDataLine(line);
+          if (parsed) {
+            if (firstDataTimeout) { clearTimeout(firstDataTimeout); firstDataTimeout = null; }
+            setState(s => ({ ...s, data: parsed, error: null }));
+          }
+        }
+      } catch (err) {
+        if (runningRef.current) {
+          setState(s => ({ ...s, error: `Serial read error: ${err instanceof Error ? err.message : String(err)}` }));
+        }
+        break;
+      }
+    }
+    if (firstDataTimeout) clearTimeout(firstDataTimeout);
+  }, [parseDataLine, parseDiagnosisLine]);
+
   const disconnect = useCallback(async () => {
     runningRef.current = false;
     if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
-    if (readerRef.current) {
-      try { await readerRef.current.cancel(); } catch { /* ignore */ }
-      readerRef.current = null;
-    }
-    if (writerRef.current) {
-      try { await writerRef.current.close(); } catch { /* ignore */ }
-      writerRef.current = null;
-    }
-    if (portRef.current) {
-      try { await portRef.current.close(); } catch { /* ignore */ }
-      portRef.current = null;
-    }
+    if (readerRef.current) { try { await readerRef.current.cancel(); } catch {} readerRef.current = null; }
+    if (writerRef.current) { try { await writerRef.current.close(); } catch {} writerRef.current = null; }
+    if (portRef.current) { try { await portRef.current.close(); } catch {} portRef.current = null; }
     setState(s => ({ ...s, ...INITIAL, webSerialAvailable: s.webSerialAvailable }));
   }, []);
 
+  // Manually connect (user clicks button → browser shows picker)
   const connect = useCallback(async () => {
     if (!navigator.serial) {
       setState(s => ({ ...s, error: 'Web Serial API not available. Use Chrome/Edge with HTTPS or localhost.' }));
       return;
     }
-
     setState(s => ({ ...s, error: null, diagnosis: null }));
-
     try {
       const port = await navigator.serial.requestPort();
       await port.open({ baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none' });
-      portRef.current = port;
-
-      const portInfo = port.getInfo?.() ?? {};
-      const portLabel = portInfo.usbProductId
-        ? `USB VID:${portInfo.usbVendorId} PID:${portInfo.usbProductId}`
-        : `Serial Port`;
-
-      setState(s => ({ ...s, connected: true, portInfo: portLabel, streaming: true, error: null }));
-
-      // ── Set up reading ──────────────────────────────────────────────────
-      const textDecoder = new TextDecoderStream();
-      port.readable.pipeTo(textDecoder.writable).catch(() => {});
-      const reader = textDecoder.readable.getReader();
-      readerRef.current = reader;
-      runningRef.current = true;
-
-      // ── Set up writing ──────────────────────────────────────────────────
-      const writer = port.writable.getWriter();
-      writerRef.current = writer;
-
-      // ── Read loop ──────────────────────────────────────────────────────
-      let buf = '';
-      let totalBytes = 0;
-      let firstDataTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
-        setState(s => s.connected ? { ...s, error: `Connected but no data (${totalBytes} raw bytes). Is bridge firmware running? Re-upload with task-based code.` } : s);
-      }, 8000);
-
-      while (runningRef.current) {
-        try {
-          const { value, done } = await reader.read();
-          if (done) break;
-          if (!value) continue;
-
-          totalBytes += value.length;
-          buf += value;
-          while (buf.includes('\n')) {
-            const nlIdx = buf.indexOf('\n');
-            const line = buf.slice(0, nlIdx).trim();
-            buf = buf.slice(nlIdx + 1);
-
-            if (line.length === 0) continue;
-
-            // Handle ACK responses (just log them, no state change)
-            if (line.startsWith('ACK:')) {
-              if (line === 'ACK:DIAGNOSE:DONE') {
-                console.log('[VEX] Diagnosis complete');
-              }
-              continue;
-            }
-
-            // Handle DIAGNOSE result lines
-            const diag = parseDiagnosisLine(line);
-            if (diag) {
-              setState(s => ({
-                ...s,
-                diagnosis: {
-                  tensionTorqueL: diag.tensionTorqueL ?? s.diagnosis?.tensionTorqueL ?? 0,
-                  tensionTorqueR: diag.tensionTorqueR ?? s.diagnosis?.tensionTorqueR ?? 0,
-                  compressionTorqueL: diag.compressionTorqueL ?? s.diagnosis?.compressionTorqueL ?? 0,
-                  compressionTorqueR: diag.compressionTorqueR ?? s.diagnosis?.compressionTorqueR ?? 0,
-                },
-              }));
-              continue;
-            }
-
-            // Handle data lines
-            const parsed = parseDataLine(line);
-            if (parsed) {
-              if (firstDataTimeout) { clearTimeout(firstDataTimeout); firstDataTimeout = null; }
-              setState(s => ({ ...s, data: parsed, error: null }));
-            }
-          }
-        } catch (err) {
-          if (runningRef.current) {
-            setState(s => ({ ...s, error: `Serial read error: ${err instanceof Error ? err.message : String(err)}` }));
-          }
-          break;
-        }
-      }
-      if (firstDataTimeout) clearTimeout(firstDataTimeout);
+      startPortSession(port);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('cancelled') || msg.includes('cancel')) {
@@ -206,44 +184,40 @@ export function useVexSerial() {
       }
       setState(s => ({ ...s, connected: false, portInfo: '', streaming: false }));
     }
-  }, [parseDataLine, parseDiagnosisLine]);
+  }, [startPortSession]);
+
+  // Auto-connect on mount: reuses previously-authorized ports without picker
+  const tryAutoConnect = useCallback(async () => {
+    if (!navigator.serial) return;
+    try {
+      const ports = await navigator.serial.getPorts();
+      if (ports.length > 0) {
+        await ports[0].open({ baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none' });
+        startPortSession(ports[0]);
+      }
+    } catch {
+      // No previously authorized ports — silent, user clicks Connect manually
+    }
+  }, [startPortSession]);
+
+  // On mount, try auto-connect to remembered VEX port
+  useEffect(() => {
+    tryAutoConnect();
+  }, [tryAutoConnect]);
 
   const sendCommand = useCallback(async (cmd: string) => {
-    if (!writerRef.current) {
-      setState(s => ({ ...s, error: 'Not connected. Click Connect VEX first.' }));
-      return;
-    }
-    try {
-      await writerRef.current.write(cmd + '\n');
-    } catch (err) {
+    if (!writerRef.current) return;
+    try { await writerRef.current.write(cmd + '\n'); } catch (err) {
       setState(s => ({ ...s, error: `Serial write error: ${err instanceof Error ? err.message : String(err)}` }));
     }
   }, []);
 
-  const pause = useCallback(() => {
-    sendCommand('STOP');
-    setState(s => ({ ...s, streaming: false }));
-  }, [sendCommand]);
+  const pause = useCallback(() => { sendCommand('STOP'); setState(s => ({ ...s, streaming: false })); }, [sendCommand]);
+  const resume = useCallback(() => { sendCommand('START'); setState(s => ({ ...s, streaming: true })); }, [sendCommand]);
+  const calibrate = useCallback(() => { sendCommand('CALIBRATE'); }, [sendCommand]);
+  const setPosition = useCallback((deg: number) => { sendCommand(`SETPOS:${deg}`); }, [sendCommand]);
+  const runDiagnose = useCallback(() => { setState(s => ({ ...s, diagnosis: null })); sendCommand('DIAGNOSE'); }, [sendCommand]);
 
-  const resume = useCallback(() => {
-    sendCommand('START');
-    setState(s => ({ ...s, streaming: true }));
-  }, [sendCommand]);
-
-  const calibrate = useCallback(() => {
-    sendCommand('CALIBRATE');
-  }, [sendCommand]);
-
-  const setPosition = useCallback((degrees: number) => {
-    sendCommand(`SETPOS:${degrees}`);
-  }, [sendCommand]);
-
-  const runDiagnose = useCallback(() => {
-    setState(s => ({ ...s, diagnosis: null }));
-    sendCommand('DIAGNOSE');
-  }, [sendCommand]);
-
-  // Cleanup
   useEffect(() => {
     return () => {
       runningRef.current = false;
