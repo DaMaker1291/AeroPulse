@@ -471,6 +471,62 @@ export function extractRGBBestZone(
     : { ...lower, zoneUsed: 'lower' };
 }
 
+// ============================================================
+// 3. TUNABLE CASCADED BUTTERWORTH BIQUAD FILTER
+// ============================================================
+// Designs a Butterworth bandpass filter and returns cascaded
+// second-order sections (biquads). Uses bilinear transform with
+// pre-warping for numerical stability.
+function butterworthPrototype(order: number): Array<{ sigma: number; omega: number }> {
+  const poles: Array<{ sigma: number; omega: number }> = [];
+  for (let k = 1; k <= order; k++) {
+    const theta = (2 * k - 1) * Math.PI / (2 * order);
+    poles.push({ sigma: -Math.sin(theta), omega: Math.cos(theta) });
+  }
+  return poles;
+}
+
+export function createBandpassBiquad(
+  lowFreq: number, highFreq: number, fs: number, order: number = 4,
+): BiquadFilter[] {
+  if (lowFreq <= 0 || highFreq >= fs / 2 || lowFreq >= highFreq) {
+    return createBandpassFilter();
+  }
+  const poles = butterworthPrototype(order);
+  const sections: BiquadFilter[] = [];
+  // Pre-warp frequencies
+  const wcL = 2 * fs * Math.tan(Math.PI * lowFreq / fs);
+  const wcH = 2 * fs * Math.tan(Math.PI * highFreq / fs);
+  const w0 = Math.sqrt(wcL * wcH);
+  const bw = wcH - wcL;
+  // Process pole pairs
+  for (let i = 0; i < poles.length; i += 2) {
+    const p1 = poles[i];
+    const p2 = i + 1 < poles.length ? poles[i + 1] : poles[i];
+    // Analog lowpass to bandpass transform
+    const sigma = (p1.sigma + p2.sigma) / 2;
+    const omega = (p1.omega + p2.omega) / 2;
+    // Pre-warped analog poles
+    const aSigma = sigma * bw / 2;
+    const aOmega = omega * bw / 2;
+    const s = w0 * w0 - aSigma * aSigma - aOmega * aOmega;
+    const t = 2 * aSigma * w0;
+    // Bilinear transform to digital
+    const T = 1 / fs;
+    const a0 = 4 + 4 * aSigma * T + s * T * T;
+    if (Math.abs(a0) < 1e-15) continue;
+    const b0 = (s * T * T) / a0;
+    const b1 = (2 * s * T * T) / a0;
+    const b2 = b0;
+    const a1 = (2 * s * T * T - 8) / a0;
+    const a2 = (4 - 4 * aSigma * T + s * T * T) / a0;
+    sections.push(new BiquadFilter(b0, b1, b2, a1, a2));
+  }
+  // If no sections were created, return default
+  if (sections.length === 0) return createBandpassFilter();
+  return sections;
+}
+
 // Precomputed inverse sRGB gamma LUT (256 entries) — avoids Math.pow per pixel.
 const gammaLUT = new Uint8Array(256);
 (function initGamma(): void {
@@ -507,12 +563,143 @@ export function computeBackgroundROI(
   return { x: bgX, y: bgY, w: bgW, h: bgH };
 }
 
-// Multi-zone extraction: split face into 6 sub-regions (3 rows × 2 columns),
-// compute RGB for each, return the quality-weighted average.
-// This maximizes signal by favoring regions with strong pulse amplitude.
+// ============================================================
+// 1. ADAPTIVE SKIN THRESHOLDS
+// ============================================================
+// Dynamically estimates skin color distribution from face ROI pixels.
+// Replaces hard-coded thresholds with frame-adaptive ones, improving
+// detection across diverse skin tones and lighting conditions.
+export function estimateSkinThresholds(
+  imageData: ImageData,
+  roi: { x: number; y: number; w: number; h: number },
+): { rMin: number; gMin: number; bMin: number; rGMin: number } | null {
+  const data = imageData.data;
+  const startX = Math.floor(roi.x);
+  const startY = Math.floor(roi.y);
+  const endX = Math.min(Math.floor(roi.x + roi.w), imageData.width);
+  const endY = Math.min(Math.floor(roi.y + roi.h), imageData.height);
+  const pixels: Array<[number, number, number]> = [];
+  for (let y = startY; y < endY; y += 2) {
+    const row = y * imageData.width;
+    for (let x = startX; x < endX; x += 2) {
+      const idx = (row + x) * 4;
+      const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+      if (r < 20 || g < 10 || b < 5) continue;
+      if (r > 250 && g > 250 && b > 250) continue;
+      if (g > r && b > r) continue;
+      pixels.push([r, g, b]);
+    }
+  }
+  if (pixels.length < 50) return null;
+  let sumR = 0, sumG = 0, sumB = 0;
+  for (const [r, g, b] of pixels) { sumR += r; sumG += g; sumB += b; }
+  const meanR = sumR / pixels.length;
+  const meanG = sumG / pixels.length;
+  const meanB = sumB / pixels.length;
+  let varR = 0, varG = 0, varB = 0;
+  for (const [r, g, b] of pixels) {
+    varR += (r - meanR) ** 2; varG += (g - meanG) ** 2; varB += (b - meanB) ** 2;
+  }
+  const stdR = Math.sqrt(varR / pixels.length);
+  const stdG = Math.sqrt(varG / pixels.length);
+  const stdB = Math.sqrt(varB / pixels.length);
+  return {
+    rMin: Math.max(20, Math.round(meanR - stdR)),
+    gMin: Math.max(10, Math.round(meanG - stdG)),
+    bMin: Math.max(5, Math.round(meanB - stdB)),
+    rGMin: Math.max(2, Math.round((meanR - meanG) * 0.5)),
+  };
+}
+
+let cachedSkinThresholds: { rMin: number; gMin: number; bMin: number; rGMin: number } | null = null;
+let skinThresholdCounter = 0;
+
+// Extract RGB using adaptive skin thresholds; falls back to fixed
+// thresholds for cold start or when calibration is insufficient.
+export function extractRGBAdaptive(
+  imageData: ImageData,
+  roi: { x: number; y: number; w: number; h: number },
+): { r: number; g: number; b: number } {
+  skinThresholdCounter++;
+  if (skinThresholdCounter % 30 === 0 || cachedSkinThresholds === null) {
+    const est = estimateSkinThresholds(imageData, roi);
+    if (est) cachedSkinThresholds = est;
+  }
+  const thr = cachedSkinThresholds;
+  const data = imageData.data;
+  const startX = Math.floor(roi.x);
+  const startY = Math.floor(roi.y);
+  const endX = Math.min(Math.floor(roi.x + roi.w), imageData.width);
+  const endY = Math.min(Math.floor(roi.y + roi.h), imageData.height);
+  let rs = 0, gs = 0, bs = 0, count = 0;
+  for (let y = startY; y < endY; y++) {
+    const row = y * imageData.width;
+    for (let x = startX; x < endX; x++) {
+      const idx = (row + x) * 4;
+      const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+      if (thr) {
+        if (r > thr.rMin && g > thr.gMin && b > thr.bMin && r > g && (r - g) > thr.rGMin) {
+          rs += r; gs += g; bs += b; count++;
+        }
+      } else {
+        if (r > 50 && g > 30 && b > 15 && r > g && r > b && (r - g) > 10) {
+          rs += r; gs += g; bs += b; count++;
+        }
+      }
+    }
+  }
+  if (count === 0) return extractRGB(imageData, roi);
+  return { r: rs / count, g: gs / count, b: bs / count };
+}
+
+// ============================================================
+// 2. FRAME-LEVEL OUTLIER REJECTION
+// ============================================================
+// Evaluates per-frame quality from intensity, saturation, dynamic
+// range, and skin pixel ratio. Returns 0 (reject) to 1 (perfect).
+export function assessFrameQuality(
+  imageData: ImageData,
+  roi: { x: number; y: number; w: number; h: number },
+  skinRatio: number,
+): number {
+  const data = imageData.data;
+  const startX = Math.floor(roi.x);
+  const startY = Math.floor(roi.y);
+  const endX = Math.min(Math.floor(roi.x + roi.w), imageData.width);
+  const endY = Math.min(Math.floor(roi.y + roi.h), imageData.height);
+  let total = 0, saturated = 0, crushed = 0;
+  let sumIntensity = 0;
+  for (let y = startY; y < endY; y++) {
+    const row = y * imageData.width;
+    for (let x = startX; x < endX; x++) {
+      const idx = (row + x) * 4;
+      const avg = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+      sumIntensity += avg;
+      if (avg > 245) saturated++;
+      if (avg < 10) crushed++;
+      total++;
+    }
+  }
+  if (total === 0) return 0;
+  const meanIntensity = sumIntensity / total;
+  const satFrac = saturated / total;
+  const crushFrac = crushed / total;
+  const intensityScore = meanIntensity > 30 && meanIntensity < 220 ? 1.0
+    : meanIntensity > 20 && meanIntensity < 240 ? 0.6 : 0.2;
+  const satScore = Math.max(0, 1 - satFrac * 5);
+  const crushScore = Math.max(0, 1 - crushFrac * 5);
+  const skinScore = Math.min(1, skinRatio * 2);
+  return 0.25 * intensityScore + 0.25 * satScore + 0.25 * crushScore + 0.25 * skinScore;
+}
+
+// ============================================================
+// 4. MULTI-ZONE WITH ADAPTIVE THRESHOLDS
+// ============================================================
+
 export function extractRGBMultiZone(
   imageData: ImageData,
   roi: { x: number; y: number; w: number; h: number },
+  landmarks?: { x: number; y: number }[] | null,
 ): { r: number; g: number; b: number } {
   const rows = 3, cols = 2;
   const zoneW = roi.w / cols;
@@ -524,7 +711,7 @@ export function extractRGBMultiZone(
         x: roi.x + col * zoneW, y: roi.y + row * zoneH,
         w: zoneW, h: zoneH,
       };
-      const rgb = extractRGBSkin(imageData, zr);
+      const rgb = extractRGBAdaptive(imageData, zr, landmarks);
       const weight = Math.min(1, Math.max(0.1, Math.abs(rgb.g - rgb.r) * 0.5));
       totalR += rgb.r * weight;
       totalG += rgb.g * weight;

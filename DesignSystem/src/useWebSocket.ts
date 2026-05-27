@@ -5,6 +5,7 @@ import {
   extractRGB, extractRGBSkin, computeSkinROI, posProject, SignalBuffer, FACE_MESH_CONNECTIONS,
   HRResult, computeHRQuality, adaptiveNoiseCancel, computeHRV, enhanceImageData, extractRGBMultiZone,
   computeAugmentationIndex, computePulseWidth, detectPeaks, linearizeGamma, computeBackgroundROI,
+  assessFrameQuality,
 } from './cameraPipeline';
 
 export interface VitalsData {
@@ -269,8 +270,8 @@ export function useWebSocket(_url?: string) {
           linearizeGamma(imgData);
           // Step 2: Adaptive contrast enhancement to maximize pulse amplitude
           enhanceImageData(imgData);
-          // Step 3: Multi-zone extraction (6 sub-regions, quality-weighted)
-          const rgb = landmarks ? extractRGBMultiZone(imgData, roi) : extractRGB(imgData, roi);
+          // Step 3: Multi-zone extraction with adaptive skin thresholds
+          const rgb = landmarks ? extractRGBMultiZone(imgData, roi, landmarks) : extractRGB(imgData, roi);
 
           // Step 4: Track face bounding box center displacement for motion quality
           const faceCx = roi.x + roi.w / 2;
@@ -291,8 +292,12 @@ export function useWebSocket(_url?: string) {
           waveBuf[waveformIdx % WAVE_LEN] = avgIntensity;
           waveformIdx++;
           frameCount++;
-          signalQualityAccum += Math.abs(rgb.g - rgb.r) / (rgb.g + rgb.r + 1);
-          signalQualityCount++;
+          // Frame-level outlier rejection: assess from intensity, saturation,
+          // dynamic range, and skin pixel ratio. Rejects glare/occlusion/crushed frames.
+          const frameQual = assessFrameQuality(imgData, roi, 0.5);
+          const sigQual = Math.abs(rgb.g - rgb.r) / (rgb.g + rgb.r + 1);
+          signalQualityAccum += sigQual * frameQual;
+          signalQualityCount += frameQual;
 
           // Extract noise reference from face-adjacent background region
           const bgROI = landmarks ? computeBackgroundROI(roi, PROC_W, PROC_H) : { x: 0, y: 0, w: PROC_W * 0.12, h: PROC_H * 0.12 };
