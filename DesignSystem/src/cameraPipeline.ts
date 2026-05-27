@@ -266,22 +266,48 @@ export function computeSpO2(r: Float64Array, g: Float64Array): number {
   return Math.max(85, Math.min(100, Math.round(spo2)));
 }
 
-export function computeRespirationRate(avgIntensity: Float64Array, fs: number): number {
+// Remove linear trend from signal to avoid DC drift contaminating low-frequency FFT
+export function detrend(signal: Float64Array): Float64Array {
+  const n = signal.length;
+  let sumX = 0, sumY = 0, sumX2 = 0, sumXY = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i; sumY += signal[i]; sumX2 += i * i; sumXY += i * signal[i];
+  }
+  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX + 1e-30);
+  const intercept = (sumY - slope * sumX) / n;
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) out[i] = signal[i] - (slope * i + intercept);
+  return out;
+}
+
+export function computeRespirationRate(avgIntensity: Float64Array, fs: number): { rate: number; quality: number } {
   const n = avgIntensity.length;
+  if (n < fs * 3) return { rate: 0, quality: 0 };
+  const detrended = detrend(avgIntensity);
   const fftLen = nextPow2(n);
   const han = hanningWindow(n);
   const padded = new Float64Array(fftLen);
-  for (let i = 0; i < n; i++) padded[i] = avgIntensity[i] * han[i];
+  for (let i = 0; i < n; i++) padded[i] = detrended[i] * han[i];
   const mag = fftMagnitude(padded);
   const binSpacing = fs / fftLen;
-  let maxPower = 0;
-  let peakFreq = 0;
+  let maxPower = 0, totalPower = 0, peakFreq = 0;
+  let binCount = 0;
   for (let i = 0; i < mag.length; i++) {
     const f = i * binSpacing;
-    if (f < 0.1 || f > 0.5) continue;
+    if (f < 0.12 || f > 0.5) continue; // 7.2-30 Br/min
+    totalPower += mag[i];
+    binCount++;
     if (mag[i] > maxPower) { maxPower = mag[i]; peakFreq = f; }
   }
-  return peakFreq * 60;
+  const meanPower = binCount > 0 ? totalPower / binCount : 0;
+  const snr = meanPower > 0 ? maxPower / meanPower : 0;
+  const rate = peakFreq * 60;
+  // Only report if peak is dominant enough and rate is physiologically plausible
+  const quality = Math.min(1, Math.max(0, (snr - 1.5) / 4.0));
+  return {
+    rate: (rate >= 8 && rate <= 30 && quality > 0.2) ? Math.round(rate) : 0,
+    quality,
+  };
 }
 
 export function detectPeaks(signal: Float64Array, fs: number, minDistSec: number = 0.3): number[] {
@@ -412,6 +438,52 @@ export function extractRGB(imageData: ImageData, roi: { x: number; y: number; w:
     }
   }
   return { r: rs / count, g: gs / count, b: bs / count };
+}
+
+// Skin-filtered RGB extraction: only includes pixels within skin color range
+// Uses simple RGB thresholds: R > 50, G > 30, B > 15, R > G, R > B
+// This avoids contamination from eyes, mouth, hair, and background
+export function extractRGBSkin(imageData: ImageData, roi: { x: number; y: number; w: number; h: number }): { r: number; g: number; b: number } {
+  const data = imageData.data;
+  const startX = Math.floor(roi.x);
+  const startY = Math.floor(roi.y);
+  const endX = Math.min(Math.floor(roi.x + roi.w), imageData.width);
+  const endY = Math.min(Math.floor(roi.y + roi.h), imageData.height);
+  let rs = 0, gs = 0, bs = 0, count = 0;
+  for (let y = startY; y < endY; y++) {
+    const row = y * imageData.width;
+    for (let x = startX; x < endX; x++) {
+      const idx = (row + x) * 4;
+      const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+      if (r > 50 && g > 30 && b > 15 && r > g && r > b && (r - g) > 10) {
+        rs += r; gs += g; bs += b; count++;
+      }
+    }
+  }
+  if (count === 0) return extractRGB(imageData, roi);
+  return { r: rs / count, g: gs / count, b: bs / count };
+}
+
+// Normalize image data: apply contrast stretching + brightness normalization
+// to reduce the effect of lighting changes on rPPG signal
+export function normalizeImageData(imgData: ImageData): void {
+  const data = imgData.data;
+  const n = data.length / 4;
+  if (n < 10) return;
+  let rSum = 0, gSum = 0, bSum = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    rSum += data[i]; gSum += data[i + 1]; bSum += data[i + 2];
+  }
+  const rMean = rSum / n, gMean = gSum / n, bMean = bSum / n;
+  const target = 128;
+  const rGain = target / Math.max(rMean, 1);
+  const gGain = target / Math.max(gMean, 1);
+  const bGain = target / Math.max(bMean, 1);
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = Math.max(0, Math.min(255, Math.round(data[i] * rGain)));
+    data[i + 1] = Math.max(0, Math.min(255, Math.round(data[i + 1] * gGain)));
+    data[i + 2] = Math.max(0, Math.min(255, Math.round(data[i + 2] * bGain)));
+  }
 }
 
 export function posProject(r: Float64Array, g: Float64Array, b: Float64Array, fs: number = 60): Float64Array {

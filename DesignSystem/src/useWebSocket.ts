@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import {
   createBandpassFilter, applyFilterChain, computeHeartRate, computeRespirationRate, computeSpO2,
-  extractRGB, computeSkinROI, posProject, SignalBuffer, FACE_MESH_CONNECTIONS,
-  HRResult, computeHRQuality, adaptiveNoiseCancel, computeHRV,
+  extractRGB, extractRGBSkin, computeSkinROI, posProject, SignalBuffer, FACE_MESH_CONNECTIONS,
+  HRResult, computeHRQuality, adaptiveNoiseCancel, computeHRV, normalizeImageData,
 } from './cameraPipeline';
 
 export interface VitalsData {
@@ -59,7 +59,7 @@ const INITIAL: BackendState = {
 };
 
 const RPPG_BUF_SECS = 20;
-const WINDOW_SECS = 6;
+const WINDOW_SECS = 8;
 const FFT_FS = 60;
 const STATE_INTERVAL = 80;
 const WAVE_LEN = 60;
@@ -135,6 +135,8 @@ export function useWebSocket(_url?: string) {
 
     // For intensity-based respiration
     const intBuf = new SignalBuffer(nBuf);
+    const hrvBufSize = FFT_FS * 30; // 30-second buffer for HRV
+    const hrvBuf = new SignalBuffer(hrvBufSize);
 
     const processFrame = async (ts: number) => {
       if (!running.current) return;
@@ -218,7 +220,10 @@ export function useWebSocket(_url?: string) {
         }
 
         if (roi) {
-          const rgb = extractRGB(imgData, roi);
+          // Apply per-frame brightness normalization to reduce lighting artifacts
+          normalizeImageData(imgData);
+          // Use skin-pixel-filtered extraction for cleaner PPG signal
+          const rgb = landmarks ? extractRGBSkin(imgData, roi) : extractRGB(imgData, roi);
           rBuf.push(rgb.r);
           gBuf.push(rgb.g);
           bBuf.push(rgb.b);
@@ -323,11 +328,11 @@ export function useWebSocket(_url?: string) {
             const iBuf = intBuf.toArray();
             const iWin = new Float64Array(n);
             for (let i = 0; i < n; i++) iWin[i] = iBuf[iBuf.length - n + i];
-            const respRate = computeRespirationRate(iWin, FFT_FS);
-            latestRespiration = respRate > 3 && respRate < 30 ? Math.round(respRate) : 0;
+            const respResult = computeRespirationRate(iWin, FFT_FS);
+            latestRespiration = respResult.rate;
 
-            // HRV from the same filtered PPG window (peak-to-peak variability)
-            const hrvMetrics = computeHRV(win, FFT_FS);
+            // HRV from the full 20s buffer (more peaks = more reliable)
+            const hrvMetrics = computeHRV(cleaned, FFT_FS);
             latestHrvSdnn = hrvMetrics.sdnn;
             latestHrvRmssd = hrvMetrics.rmssd;
           } else {
