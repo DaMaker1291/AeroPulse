@@ -304,7 +304,15 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
           )}
           {currentPage === 'vexbridge' && (
             <PageVexBridge
-              vex={{ state: vex.state, connect: vex.connect, disconnect: vex.disconnect, calibrate: vex.calibrate }}
+              vex={{
+                state: vex.state,
+                connect: vex.connect,
+                disconnect: vex.disconnect,
+                calibrate: vex.calibrate,
+                setPosition: vex.setPosition,
+                runDiagnose: vex.runDiagnose,
+                sendCommand: vex.sendCommand,
+              }}
               m3Wave={vexM3Wave}
               m4Wave={vexM4Wave}
             />

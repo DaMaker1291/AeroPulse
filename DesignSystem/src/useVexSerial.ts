@@ -4,9 +4,18 @@ export interface VexData {
   m3Torque: number;
   m3Pos: number;
   m3Current: number;
+  m3Force: number;
   m4Torque: number;
   m4Pos: number;
   m4Current: number;
+  m4Force: number;
+}
+
+export interface VexDiagnosis {
+  tensionTorqueL: number;
+  tensionTorqueR: number;
+  compressionTorqueL: number;
+  compressionTorqueR: number;
 }
 
 export interface VexState {
@@ -16,6 +25,7 @@ export interface VexState {
   streaming: boolean;
   error: string | null;
   webSerialAvailable: boolean;
+  diagnosis: VexDiagnosis | null;
 }
 
 const INITIAL: VexState = {
@@ -25,6 +35,7 @@ const INITIAL: VexState = {
   streaming: false,
   error: null,
   webSerialAvailable: false,
+  diagnosis: null,
 };
 
 export function useVexSerial() {
@@ -38,7 +49,7 @@ export function useVexSerial() {
   const runningRef = useRef(true);
   const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const parseLine = useCallback((line: string): VexData | null => {
+  const parseDataLine = useCallback((line: string): VexData | null => {
     const data: Record<string, number> = {};
     const pairs = line.split(',');
     for (const pair of pairs) {
@@ -53,10 +64,28 @@ export function useVexSerial() {
       m3Torque: data.M3_TORQUE,
       m3Pos: data.M3_POS ?? 0,
       m3Current: data.M3_CURRENT ?? 0,
+      m3Force: data.M3_FORCE ?? 0,
       m4Torque: data.M4_TORQUE ?? 0,
       m4Pos: data.M4_POS ?? 0,
       m4Current: data.M4_CURRENT ?? 0,
+      m4Force: data.M4_FORCE ?? 0,
     };
+  }, []);
+
+  const parseDiagnosisLine = useCallback((line: string): Partial<VexDiagnosis> | null => {
+    if (line.startsWith('TENSION:')) {
+      const parts = line.slice(8).split(',');
+      if (parts.length >= 2) {
+        return { tensionTorqueL: parseFloat(parts[0]), tensionTorqueR: parseFloat(parts[1]) };
+      }
+    }
+    if (line.startsWith('COMPRESSION:')) {
+      const parts = line.slice(12).split(',');
+      if (parts.length >= 2) {
+        return { compressionTorqueL: parseFloat(parts[0]), compressionTorqueR: parseFloat(parts[1]) };
+      }
+    }
+    return null;
   }, []);
 
   const disconnect = useCallback(async () => {
@@ -83,10 +112,9 @@ export function useVexSerial() {
       return;
     }
 
-    setState(s => ({ ...s, error: null }));
+    setState(s => ({ ...s, error: null, diagnosis: null }));
 
     try {
-      // Show the browser's serial port picker
       const port = await navigator.serial.requestPort();
       await port.open({ baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none' });
       portRef.current = port;
@@ -113,7 +141,7 @@ export function useVexSerial() {
       let buf = '';
       let totalBytes = 0;
       let firstDataTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
-        setState(s => s.connected ? { ...s, error: `Connected but no data received (${totalBytes} raw bytes read). Is the bridge firmware running? Select "Driver Control" or re-upload with task-based code.` } : s);
+        setState(s => s.connected ? { ...s, error: `Connected but no data (${totalBytes} raw bytes). Is bridge firmware running? Re-upload with task-based code.` } : s);
       }, 8000);
 
       while (runningRef.current) {
@@ -129,17 +157,36 @@ export function useVexSerial() {
             const line = buf.slice(0, nlIdx).trim();
             buf = buf.slice(nlIdx + 1);
 
-            if (line.length > 0) {
-              // Check for ACK responses
-              if (line.startsWith('ACK:')) {
-                // Command acknowledged — not a data line
-                continue;
+            if (line.length === 0) continue;
+
+            // Handle ACK responses (just log them, no state change)
+            if (line.startsWith('ACK:')) {
+              if (line === 'ACK:DIAGNOSE:DONE') {
+                console.log('[VEX] Diagnosis complete');
               }
-              const parsed = parseLine(line);
-              if (parsed) {
-                if (firstDataTimeout) { clearTimeout(firstDataTimeout); firstDataTimeout = null; }
-                setState(s => ({ ...s, data: parsed, error: null }));
-              }
+              continue;
+            }
+
+            // Handle DIAGNOSE result lines
+            const diag = parseDiagnosisLine(line);
+            if (diag) {
+              setState(s => ({
+                ...s,
+                diagnosis: {
+                  tensionTorqueL: diag.tensionTorqueL ?? s.diagnosis?.tensionTorqueL ?? 0,
+                  tensionTorqueR: diag.tensionTorqueR ?? s.diagnosis?.tensionTorqueR ?? 0,
+                  compressionTorqueL: diag.compressionTorqueL ?? s.diagnosis?.compressionTorqueL ?? 0,
+                  compressionTorqueR: diag.compressionTorqueR ?? s.diagnosis?.compressionTorqueR ?? 0,
+                },
+              }));
+              continue;
+            }
+
+            // Handle data lines
+            const parsed = parseDataLine(line);
+            if (parsed) {
+              if (firstDataTimeout) { clearTimeout(firstDataTimeout); firstDataTimeout = null; }
+              setState(s => ({ ...s, data: parsed, error: null }));
             }
           }
         } catch (err) {
@@ -159,10 +206,13 @@ export function useVexSerial() {
       }
       setState(s => ({ ...s, connected: false, portInfo: '', streaming: false }));
     }
-  }, [parseLine]);
+  }, [parseDataLine, parseDiagnosisLine]);
 
   const sendCommand = useCallback(async (cmd: string) => {
-    if (!writerRef.current) return;
+    if (!writerRef.current) {
+      setState(s => ({ ...s, error: 'Not connected. Click Connect VEX first.' }));
+      return;
+    }
     try {
       await writerRef.current.write(cmd + '\n');
     } catch (err) {
@@ -184,7 +234,16 @@ export function useVexSerial() {
     sendCommand('CALIBRATE');
   }, [sendCommand]);
 
-  // Cleanup on unmount
+  const setPosition = useCallback((degrees: number) => {
+    sendCommand(`SETPOS:${degrees}`);
+  }, [sendCommand]);
+
+  const runDiagnose = useCallback(() => {
+    setState(s => ({ ...s, diagnosis: null }));
+    sendCommand('DIAGNOSE');
+  }, [sendCommand]);
+
+  // Cleanup
   useEffect(() => {
     return () => {
       runningRef.current = false;
@@ -195,5 +254,5 @@ export function useVexSerial() {
     };
   }, []);
 
-  return { state, connect, disconnect, pause, resume, calibrate, sendCommand };
+  return { state, connect, disconnect, pause, resume, calibrate, setPosition, runDiagnose, sendCommand };
 }
