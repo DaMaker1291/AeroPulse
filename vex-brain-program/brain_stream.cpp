@@ -5,8 +5,9 @@
 
   Deploy:
     1. `pros build`
-    2. `pros upload` — printf() streams over USB CDC serial @ 115200 baud
-    3. Select "Driver Control" on the VEX Brain screen to run opcontrol()
+    2. `pros upload`
+    3. The control loop starts IMMEDIATELY after upload — no need to select
+       "Driver Control". Streaming begins within ~1 second.
 
   Wiring:
     PORT3 = Left grip  (reverse = false)
@@ -28,32 +29,16 @@ double holdPosLeft = 0.0;
 double holdPosRight = 0.0;
 bool holdEnabled = true;
 
-void initialize() {
-  gripLeft.set_gearing(pros::E_MOTOR_GEARSET_18);
-  gripRight.set_gearing(pros::E_MOTOR_GEARSET_18);
-  gripRight.set_reversed(true);
+// ── Control loop running in a task (starts instantly from initialize()) ────
+void controlLoop(void* param) {
+  int frame = 0;
 
-  pros::lcd::initialize();
-  pros::lcd::set_text(0, "AeroPulse VEX Bridge");
-  pros::lcd::set_text(1, "Streaming 50 Hz");
-
-  // Allow motors to power up, then latch current position as hold target
-  pros::delay(500);
+  // Latch current position as hold target
   holdPosLeft = gripLeft.get_position();
   holdPosRight = gripRight.get_position();
   holdEnabled = true;
-  pros::lcd::set_text(2, "HOLD ACTIVE");
-}
 
-void disabled() {
-  // Brake motors when competition switch goes to disabled
-  gripLeft.brake();
-  gripRight.brake();
-  holdEnabled = false;
-}
-
-void opcontrol() {
-  int frame = 0;
+  pros::lcd::set_text(2, "STREAMING 50 Hz");
 
   while (true) {
     // ── Position-hold control loop ──────────────────────────────────────
@@ -86,11 +71,11 @@ void opcontrol() {
     double cR = gripRight.get_current_draw() / 1000.0;
 
     // ── Stream over USB serial ──────────────────────────────────────────
-    // Browser connects to this COM port via Web Serial API and parses
-    // the KEY:VALUE pairs.
+    // fflush ensures data is sent immediately (not buffered)
     printf("M3_TORQUE:%.3f,M3_POS:%.1f,M3_CURRENT:%.3f,"
            "M4_TORQUE:%.3f,M4_POS:%.1f,M4_CURRENT:%.3f\n",
            tL, pL, cL, tR, pR, cR);
+    fflush(stdout);
 
     // ── LCD update ──────────────────────────────────────────────────────
     if (++frame % 20 == 0) {
@@ -101,4 +86,32 @@ void opcontrol() {
 
     pros::delay(20);  // 50 Hz
   }
+}
+
+void initialize() {
+  gripLeft.set_gearing(pros::E_MOTOR_GEARSET_18);
+  gripRight.set_gearing(pros::E_MOTOR_GEARSET_18);
+  gripRight.set_reversed(true);
+
+  pros::lcd::initialize();
+  pros::lcd::set_text(0, "AeroPulse VEX Bridge");
+  pros::lcd::set_text(1, "Starting...");
+
+  // Allow motors to power up before latching position
+  pros::delay(800);
+
+  // Start control loop in a task — runs immediately without needing
+  // to select "Driver Control" on the Brain screen
+  pros::Task loop(controlLoop, nullptr, "ControlLoop");
+}
+
+void disabled() {
+  holdEnabled = false;
+  gripLeft.brake();
+  gripRight.brake();
+}
+
+void opcontrol() {
+  // Not used — controlLoop task handles everything
+  while (true) pros::delay(100);
 }

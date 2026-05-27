@@ -111,9 +111,10 @@ export function useVexSerial() {
 
       // ── Read loop ──────────────────────────────────────────────────────
       let buf = '';
+      let totalBytes = 0;
       let firstDataTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
-        setState(s => s.connected ? { ...s, error: 'Connected but no data received. Is the VEX Brain running the bridge firmware?' } : s);
-      }, 5000);
+        setState(s => s.connected ? { ...s, error: `Connected but no data received (${totalBytes} raw bytes read). Is the bridge firmware running? Select "Driver Control" or re-upload with task-based code.` } : s);
+      }, 8000);
 
       while (runningRef.current) {
         try {
@@ -121,6 +122,7 @@ export function useVexSerial() {
           if (done) break;
           if (!value) continue;
 
+          totalBytes += value.length;
           buf += value;
           while (buf.includes('\n')) {
             const nlIdx = buf.indexOf('\n');
