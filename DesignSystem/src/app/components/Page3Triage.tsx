@@ -30,6 +30,10 @@ interface VexTorqueData {
   m3Force: number;
   m4Torque: number;
   m4Force: number;
+  peakForceL: number;
+  peakForceR: number;
+  symmetryRatio: number;
+  fatigueIndex: number;
 }
 
 interface Page3Props {
@@ -238,7 +242,9 @@ export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonFo
         if (backendVitals.heartRate > 0) kv('Heart Rate:', `${Math.round(backendVitals.heartRate)} BPM`);
         if (backendVitals.respiration > 0) kv('Respiration Rate:', `${Math.round(backendVitals.respiration)} Br/min`);
         if (backendVitals.bloodOxygen > 0) kv('Blood O₂:', `${Math.round(backendVitals.bloodOxygen)}% SpO2`);
-        para('Blood pressure cannot be measured from a consumer webcam. Use a standard cuff for BP.', { size: 8, color: [140, 140, 145] });
+        if (backendVitals.hrvSdnn > 0) kv('HRV (SDNN):', `${Math.round(backendVitals.hrvSdnn)} ms`);
+        if (backendVitals.hrvRmssd > 0) kv('HRV (RMSSD):', `${Math.round(backendVitals.hrvRmssd)} ms`);
+        para('Blood pressure cannot be measured from a consumer webcam — use a standard cuff.', { size: 8, color: [140, 140, 145] });
       } else {
         para('No vital data recorded. Complete a biometric scan first.', { color: [180, 80, 0] });
       }
@@ -257,12 +263,18 @@ export function Page3Triage({ backendTriage, backendFft, backendVitals, reasonFo
       // ── VEX Grip Torque Data ──
       if (vexTorque && (vexTorque.m3Torque > 0 || vexTorque.m4Torque > 0)) {
         section('Grip Force Measurement (VEX Brain)');
-        para('Grip force was measured via VEX V5 Brain with 18:1 cartridge gears and ~2 cm lever arm.', { size: 9, color: [100, 100, 105] });
+        para('Grip force measured via VEX V5 Brain with 18:1 cartridge gears and ~2 cm lever arm.', { size: 9, color: [100, 100, 105] });
         y += 1;
         kv('Left Motor Torque:', `${vexTorque.m3Torque.toFixed(2)} Nm`);
         kv('Left Force Estimate:', `${vexTorque.m3Force.toFixed(2)} N`);
         kv('Right Motor Torque:', `${vexTorque.m4Torque.toFixed(2)} Nm`);
         kv('Right Force Estimate:', `${vexTorque.m4Force.toFixed(2)} N`);
+        if (vexTorque.peakForceL > 0) {
+          kv('Peak Left Force:', `${vexTorque.peakForceL.toFixed(1)} N`);
+          kv('Peak Right Force:', `${vexTorque.peakForceR.toFixed(1)} N`);
+          kv('L/R Symmetry:', `${vexTorque.symmetryRatio}%`);
+          kv('Fatigue Index:', `${vexTorque.fatigueIndex}%`);
+        }
         y += 2;
       }
 

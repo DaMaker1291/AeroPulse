@@ -3,13 +3,15 @@ import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import {
   createBandpassFilter, applyFilterChain, computeHeartRate, computeRespirationRate, computeSpO2,
   extractRGB, computeSkinROI, posProject, SignalBuffer, FACE_MESH_CONNECTIONS,
-  HRResult, computeHRQuality, adaptiveNoiseCancel,
+  HRResult, computeHRQuality, adaptiveNoiseCancel, computeHRV,
 } from './cameraPipeline';
 
 export interface VitalsData {
   heartRate: number;
   respiration: number;
   bloodOxygen: number;
+  hrvSdnn: number;
+  hrvRmssd: number;
 }
 
 export interface TriageData {
@@ -44,7 +46,7 @@ const INITIAL: BackendState = {
   targetStatus: 'standby',
   cameraConnected: false,
   faceTracked: false,
-  vitals: { heartRate: 0, respiration: 0, bloodOxygen: 0 },
+  vitals: { heartRate: 0, respiration: 0, bloodOxygen: 0, hrvSdnn: 0, hrvRmssd: 0 },
   rppgWave: [],
   m3Wave: [],
   m4Wave: [],
@@ -96,6 +98,8 @@ export function useWebSocket(_url?: string) {
     let latestHr = 0;
     let smoothedHr = 0;
     let latestRespiration = 0;
+    let latestHrvSdnn = 0;
+    let latestHrvRmssd = 0;
     let latestFreqs: number[] = [];
     let latestPower: number[] = [];
     let waveformIdx = 0;
@@ -321,6 +325,11 @@ export function useWebSocket(_url?: string) {
             for (let i = 0; i < n; i++) iWin[i] = iBuf[iBuf.length - n + i];
             const respRate = computeRespirationRate(iWin, FFT_FS);
             latestRespiration = respRate > 3 && respRate < 30 ? Math.round(respRate) : 0;
+
+            // HRV from the same filtered PPG window (peak-to-peak variability)
+            const hrvMetrics = computeHRV(win, FFT_FS);
+            latestHrvSdnn = hrvMetrics.sdnn;
+            latestHrvRmssd = hrvMetrics.rmssd;
           } else {
             consecutiveBadReadings++;
             // Freeze display on last good reading — don't update latestHr
@@ -392,6 +401,8 @@ export function useWebSocket(_url?: string) {
           if (timeSinceFace > 5000) {
             latestHr = 0;
             latestRespiration = 0;
+            latestHrvSdnn = 0;
+            latestHrvRmssd = 0;
             smoothedHr = 0;
             consecutiveBadReadings = 0;
           }
@@ -408,6 +419,8 @@ export function useWebSocket(_url?: string) {
             heartRate: latestHr,
             respiration: latestRespiration,
             bloodOxygen: spo2Est,
+            hrvSdnn: latestHrvSdnn,
+            hrvRmssd: latestHrvRmssd,
           },
           rppgWave: rppgWav,
           m3Wave: [],

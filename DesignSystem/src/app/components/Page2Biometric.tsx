@@ -7,6 +7,8 @@ interface VitalsData {
   heartRate: number;
   respiration: number;
   bloodOxygen: number;
+  hrvSdnn?: number;
+  hrvRmssd?: number;
 }
 
 interface Page2Props {
@@ -70,6 +72,7 @@ export function Page2Biometric({ backendVitals, backendRppgWave, backendM3Wave, 
     { label: 'Heart Rate', value: vitals.heartRate > 0 ? Math.round(vitals.heartRate) : null, unit: 'BPM', icon: Heart, color: '#FF453A' },
     { label: 'Respiration', value: vitals.respiration > 0 ? Math.round(vitals.respiration) : null, unit: 'Br/min', icon: Gauge, color: '#0A84FF' },
     { label: 'Blood O₂', value: vitals.bloodOxygen > 0 ? Math.round(vitals.bloodOxygen) : null, unit: '% SpO2', icon: Droplets, color: '#30D158' },
+    { label: 'HRV (SDNN)', value: (vitals as any).hrvSdnn > 0 ? (vitals as any).hrvSdnn : null, unit: 'ms', icon: Activity, color: '#BF5AF2' },
   ];
 
   const isMobile = useIsMobile();

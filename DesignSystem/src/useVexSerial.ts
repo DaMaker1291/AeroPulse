@@ -26,6 +26,10 @@ export interface VexState {
   error: string | null;
   webSerialAvailable: boolean;
   diagnosis: VexDiagnosis | null;
+  peakForceL: number;
+  peakForceR: number;
+  symmetryRatio: number;
+  fatigueIndex: number;
 }
 
 const INITIAL: VexState = {
@@ -36,6 +40,10 @@ const INITIAL: VexState = {
   error: null,
   webSerialAvailable: false,
   diagnosis: null,
+  peakForceL: 0,
+  peakForceR: 0,
+  symmetryRatio: 0,
+  fatigueIndex: 0,
 };
 
 export function useVexSerial() {
@@ -48,6 +56,8 @@ export function useVexSerial() {
   const writerRef = useRef<WritableStreamDefaultWriter | null>(null);
   const runningRef = useRef(true);
   const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const forceHistoryL = useRef<number[]>([]);
+  const forceHistoryR = useRef<number[]>([]);
 
   const parseDataLine = useCallback((line: string): VexData | null => {
     const data: Record<string, number> = {};
@@ -142,7 +152,41 @@ export function useVexSerial() {
           const parsed = parseDataLine(line);
           if (parsed) {
             if (firstDataTimeout) { clearTimeout(firstDataTimeout); firstDataTimeout = null; }
-            setState(s => ({ ...s, data: parsed, error: null }));
+            // Track force history for peak/symmetry/fatigue analysis
+            const histL = forceHistoryL.current;
+            const histR = forceHistoryR.current;
+            histL.push(parsed.m3Force);
+            histR.push(parsed.m4Force);
+            if (histL.length > 300) histL.shift();
+            if (histR.length > 300) histR.shift();
+            const peakL = Math.max(...histL, parsed.m3Force);
+            const peakR = Math.max(...histR, parsed.m4Force);
+            const recentN = Math.min(60, histL.length, histR.length);
+            let avgL = 0, avgR = 0;
+            if (recentN > 0) {
+              for (let i = histL.length - recentN; i < histL.length; i++) avgL += histL[i];
+              for (let i = histR.length - recentN; i < histR.length; i++) avgR += histR[i];
+              avgL /= recentN; avgR /= recentN;
+            }
+            const symRatio = avgL > 0 && avgR > 0 ? Math.min(avgL, avgR) / Math.max(avgL, avgR) : 0;
+            // Fatigue: force trend over last 120 samples (~2.4s)
+            let fatigueIdx = 0;
+            if (histL.length >= 120) {
+              const half = Math.floor(histL.length / 2);
+              let firstHalf = 0, secondHalf = 0;
+              for (let i = 0; i < half; i++) firstHalf += histL[i];
+              for (let i = half; i < histL.length; i++) secondHalf += histL[i];
+              const avgFirst = firstHalf / half;
+              const avgSecond = secondHalf / (histL.length - half);
+              fatigueIdx = avgFirst > 0 ? Math.max(0, Math.min(1, (avgFirst - avgSecond) / avgFirst)) : 0;
+            }
+            setState(s => ({
+              ...s, data: parsed, error: null,
+              peakForceL: Math.max(s.peakForceL, parsed.m3Force),
+              peakForceR: Math.max(s.peakForceR, parsed.m4Force),
+              symmetryRatio: Math.round(symRatio * 100),
+              fatigueIndex: Math.round(fatigueIdx * 100),
+            }));
           }
         }
       } catch (err) {

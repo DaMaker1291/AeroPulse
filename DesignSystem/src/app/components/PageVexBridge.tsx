@@ -124,6 +124,40 @@ export function PageVexBridge({ vex }: PageVexProps) {
         </div>
       )}
 
+      {/* Grip Analysis — visible when data is streaming */}
+      {hasData && (
+        <div className="bg-[#16161A] rounded-2xl border border-[#1E1E22] p-3 sm:p-5 flex-shrink-0">
+          <div className="flex items-center gap-2 mb-3">
+            <Activity className="w-3.5 h-3.5 text-[#BF5AF2]" />
+            <span className="text-[11px] sm:text-[12px] font-semibold text-white">Grip Analysis</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-[#0B0B0D] rounded-xl border border-[#1E1E22] p-3">
+              <span className="text-[8px] text-[#8E8E93] tracking-widest uppercase font-medium">Peak Force</span>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="text-[20px] font-bold text-white font-mono">{vex.state.peakForceL.toFixed(1)}</span>
+                <span className="text-[10px] text-[#0A84FF]">N (L)</span>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[20px] font-bold text-white font-mono">{vex.state.peakForceR.toFixed(1)}</span>
+                <span className="text-[10px] text-[#BF5AF2]">N (R)</span>
+              </div>
+            </div>
+            <div className="bg-[#0B0B0D] rounded-xl border border-[#1E1E22] p-3">
+              <span className="text-[8px] text-[#8E8E93] tracking-widest uppercase font-medium">Symmetry / Fatigue</span>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="text-[20px] font-bold text-white font-mono">{vex.state.symmetryRatio}%</span>
+                <span className="text-[10px] text-[#8E8E93]">symmetry</span>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[20px] font-bold text-white font-mono">{vex.state.fatigueIndex}%</span>
+                <span className="text-[10px] text-[#8E8E93]">fatigue</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Not connected */}
       {!vex.state.connected && (
         <div className="bg-[#16161A] rounded-2xl border border-[#1E1E22] p-3 sm:p-5 flex-shrink-0">

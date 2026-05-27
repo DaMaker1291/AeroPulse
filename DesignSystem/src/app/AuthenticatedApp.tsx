@@ -328,6 +328,10 @@ export default function AuthenticatedApp({ user, onSignOut }: AuthenticatedAppPr
                 m3Force: vex.state.data.m3Force,
                 m4Torque: vex.state.data.m4Torque,
                 m4Force: vex.state.data.m4Force,
+                peakForceL: vex.state.peakForceL,
+                peakForceR: vex.state.peakForceR,
+                symmetryRatio: vex.state.symmetryRatio,
+                fatigueIndex: vex.state.fatigueIndex,
               } : null}
             />
           )}

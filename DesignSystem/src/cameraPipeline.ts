@@ -284,6 +284,79 @@ export function computeRespirationRate(avgIntensity: Float64Array, fs: number): 
   return peakFreq * 60;
 }
 
+export function detectPeaks(signal: Float64Array, fs: number, minDistSec: number = 0.3): number[] {
+  const minDist = Math.max(1, Math.round(minDistSec * fs));
+  const peaks: number[] = [];
+  for (let i = 1; i < signal.length - 1; i++) {
+    if (signal[i] > signal[i - 1] && signal[i] > signal[i + 1]) {
+      if (peaks.length === 0 || i - peaks[peaks.length - 1] >= minDist) {
+        peaks.push(i);
+      } else if (signal[i] > signal[peaks[peaks.length - 1]]) {
+        peaks[peaks.length - 1] = i;
+      }
+    }
+  }
+  return peaks;
+}
+
+export interface HRVMetrics {
+  sdnn: number;
+  rmssd: number;
+  meanRR: number;
+  hrFromHRV: number;
+  peakCount: number;
+}
+
+export function computeHRV(signal: Float64Array, fs: number): HRVMetrics {
+  const peaks = detectPeaks(signal, fs);
+  if (peaks.length < 3) return { sdnn: 0, rmssd: 0, meanRR: 0, hrFromHRV: 0, peakCount: peaks.length };
+  const intervals: number[] = [];
+  for (let i = 1; i < peaks.length; i++) {
+    intervals.push((peaks[i] - peaks[i - 1]) / fs);
+  }
+  const meanRR = intervals.reduce((s, v) => s + v, 0) / intervals.length;
+  const diffs: number[] = [];
+  let sumSq = 0;
+  for (let i = 0; i < intervals.length; i++) {
+    const d = intervals[i] - meanRR;
+    sumSq += d * d;
+    if (i > 0) diffs.push(intervals[i] - intervals[i - 1]);
+  }
+  const sdnn = Math.sqrt(sumSq / intervals.length) * 1000;
+  let sumSqDiff = 0;
+  for (const d of diffs) sumSqDiff += d * d;
+  const rmssd = diffs.length > 0 ? Math.sqrt(sumSqDiff / diffs.length) * 1000 : 0;
+  return {
+    sdnn: Math.round(sdnn),
+    rmssd: Math.round(rmssd),
+    meanRR: Math.round(meanRR * 1000),
+    hrFromHRV: Math.round(60 / meanRR),
+    peakCount: peaks.length,
+  };
+}
+
+export function computePulseWidth(signal: Float64Array, fs: number, peakIdx: number): number {
+  const halfMax = signal[peakIdx] * 0.5;
+  let left = peakIdx;
+  while (left > 0 && signal[left] > halfMax) left--;
+  let right = peakIdx;
+  while (right < signal.length - 1 && signal[right] > halfMax) right++;
+  return (right - left) / fs;
+}
+
+export function computeAugmentationIndex(signal: Float64Array, fs: number, peakIdx: number): number {
+  const sysPeak = signal[peakIdx];
+  let diaPeak = 0;
+  let diaIdx = peakIdx;
+  for (let i = peakIdx + 1; i < Math.min(signal.length, peakIdx + Math.round(0.4 * fs)); i++) {
+    if (signal[i] > diaPeak) { diaPeak = signal[i]; diaIdx = i; }
+  }
+  if (diaPeak <= 0 || sysPeak <= 0) return 0;
+  const pp = sysPeak - signal[peakIdx - 1];
+  const dp = diaPeak - signal[peakIdx - 1];
+  return Math.max(0, Math.min(1, (dp / pp))) * 100;
+}
+
 export function resample(signal: Float64Array, fromCount: number, toCount: number): Float64Array {
   const out = new Float64Array(toCount);
   for (let i = 0; i < toCount; i++) {
