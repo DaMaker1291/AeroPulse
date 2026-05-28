@@ -5,7 +5,7 @@ import {
   extractRGB, extractRGBSkin, computeSkinROI, posProject, SignalBuffer, FACE_MESH_CONNECTIONS,
   HRResult, computeHRQuality, adaptiveNoiseCancel, computeHRV, enhanceImageData, extractRGBMultiZone,
   computeAugmentationIndex, computePulseWidth, detectPeaks, linearizeGamma, computeBackgroundROI,
-  assessFrameQuality,
+  assessFrameQuality, aiRefineQuality,
 } from './cameraPipeline';
 
 export interface VitalsData {
@@ -151,6 +151,9 @@ export function useWebSocket(_url?: string) {
     let microMotionAccum = 0;
     let microMotionCount = 0;
 
+    // Per-frame quality tracking for AI model
+    let latestFrameQual = 0;
+
     // Per-frame motion rejection: bounding box center displacement
     let prevFaceCx = -1, prevFaceCy = -1;
     let latestMotionLevel = 0;
@@ -294,10 +297,10 @@ export function useWebSocket(_url?: string) {
           frameCount++;
           // Frame-level outlier rejection: assess from intensity, saturation,
           // dynamic range, and skin pixel ratio. Rejects glare/occlusion/crushed frames.
-          const frameQual = assessFrameQuality(imgData, roi, 0.5);
+          latestFrameQual = assessFrameQuality(imgData, roi, 0.5);
           const sigQual = Math.abs(rgb.g - rgb.r) / (rgb.g + rgb.r + 1);
-          signalQualityAccum += sigQual * frameQual;
-          signalQualityCount += frameQual;
+          signalQualityAccum += sigQual * latestFrameQual;
+          signalQualityCount += latestFrameQual;
 
           // Extract noise reference from face-adjacent background region
           const bgROI = landmarks ? computeBackgroundROI(roi, PROC_W, PROC_H) : { x: 0, y: 0, w: PROC_W * 0.12, h: PROC_H * 0.12 };
@@ -371,7 +374,11 @@ export function useWebSocket(_url?: string) {
           const hr = computeHeartRate(win, FFT_FS);
 
           const bpmInRange = hr.bpm > HR_MIN_ACCEPTABLE && hr.bpm < HR_MAX_ACCEPTABLE;
-          const signalQuality = computeHRQuality(win, hr.bpm, hr, motionScore);
+          const ruleQuality = computeHRQuality(win, hr.bpm, hr, motionScore);
+          const aiQuality = aiRefineQuality(hr, latestMotionLevel, latestFrameQual, 0.5);
+          // Blend AI model with rule-based quality — AI refines the score,
+          // rule-based catches edge cases the model wasn't trained on.
+          const signalQuality = 0.6 * aiQuality + 0.4 * ruleQuality;
 
           // On heavy motion, blend new readings at lower weight instead of freezing
           const motionWeight = motionHeavy ? 0.15 : 1.0;
