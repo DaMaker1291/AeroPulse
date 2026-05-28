@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Activity, Scan, Brain, Building2 } from 'lucide-react';
 import { Toaster } from 'sonner';
@@ -17,12 +17,17 @@ export default function App() {
   const [videoSrc, setVideoSrc] = useState<string>('');
   const [targetStatus, setTargetStatus] = useState<'standby' | 'acquiring' | 'locked'>('standby');
   const [aiConfidence, setAiConfidence] = useState<number>(0.74);
+  const [faceTracked, setFaceTracked] = useState(false);
+  const [signalQuality, setSignalQuality] = useState(0);
+  const [hrvMetrics, setHrvMetrics] = useState({ rmssd: 0, sdnn: 0, pnsIndex: 0 });
+  const [sessionElapsed, setSessionElapsed] = useState(0);
+  const [vitalsTrend, setVitalsTrend] = useState<{ heartRate: number[]; spo2: number[]; respiration: number[] }>({ heartRate: [], spo2: [], respiration: [] });
   const [vitals, setVitals] = useState({
-    heartRate: 74,
-    respiration: 14,
-    bloodOxygen: 98,
-    temperature: 36.8,
-    compliance: 92,
+    heartRate: 0,
+    respiration: 0,
+    bloodOxygen: 0,
+    temperature: 0,
+    compliance: 0,
   });
   const [metrics, setMetrics] = useState({
     bilateralSymmetry: 94,
@@ -80,8 +85,28 @@ export default function App() {
           if (data.aiConfidence !== undefined) {
             setAiConfidence(data.aiConfidence);
           }
+          if (data.faceTracked !== undefined) {
+            setFaceTracked(data.faceTracked);
+          }
+          if (data.signalQuality !== undefined) {
+            setSignalQuality(data.signalQuality);
+          }
+          if (data.sessionElapsed !== undefined) {
+            setSessionElapsed(data.sessionElapsed);
+          }
+          if (data.vitalsTrend) {
+            setVitalsTrend(data.vitalsTrend);
+          }
+          if (data.hrv) {
+            setHrvMetrics(data.hrv);
+          }
           if (data.vitals) {
-            setVitals(data.vitals);
+            setVitals(prev => {
+              if (!data.faceTracked) {
+                return { heartRate: 0, respiration: 0, bloodOxygen: 0, temperature: 0, compliance: 0 };
+              }
+              return { ...prev, ...data.vitals };
+            });
           }
           if (data.metrics) {
             setMetrics({
@@ -293,6 +318,10 @@ export default function App() {
                     scanning={scanning}
                     countdown={countdown}
                     sendWs={sendWs}
+                    faceTracked={faceTracked}
+                    signalQuality={signalQuality}
+                    hrvMetrics={hrvMetrics}
+                    sessionElapsed={sessionElapsed}
                   />
                 )}
                 {currentPage === 'triage' && (
@@ -301,6 +330,7 @@ export default function App() {
                     psdData={psdData}
                     enduranceSummary={enduranceSummary}
                     sendWs={sendWs}
+                    vitalsTrend={vitalsTrend}
                   />
                 )}
                 {currentPage === 'enterprise' && <Page4Enterprise />}

@@ -17,6 +17,10 @@ interface Page2Props {
   scanning: boolean;
   countdown: number;
   sendWs: (cmd: string, data?: any) => void;
+  faceTracked: boolean;
+  signalQuality: number;
+  hrvMetrics: { rmssd: number; sdnn: number; pnsIndex: number };
+  sessionElapsed: number;
 }
 
 export function Page2Biometric({
@@ -27,7 +31,11 @@ export function Page2Biometric({
   scanMode,
   scanning,
   countdown,
-  sendWs
+  sendWs,
+  faceTracked,
+  signalQuality,
+  hrvMetrics,
+  sessionElapsed
 }: Page2Props) {
   const [prevScanning, setPrevScanning] = useState(false);
 
@@ -49,6 +57,44 @@ export function Page2Biometric({
 
   return (
     <div className="flex flex-col gap-5 h-full">
+      {/* Top: Session Info Bar */}
+      <div className="flex items-center justify-between bg-[#16161A] rounded-xl px-6 py-2 border border-[#2C2C2E]">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${faceTracked ? 'bg-[#30D158] animate-pulse' : 'bg-[#FF9F0A]'}`}></div>
+            <span className="text-[11px] text-[#8E8E93] tracking-wider uppercase">
+              {faceTracked ? 'Face Locked' : 'No Face'}
+            </span>
+          </div>
+          <div className="h-4 w-px bg-[#2C2C2E]"></div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-[#8E8E93] tracking-wider uppercase">Session</span>
+            <span className="text-[14px] text-white font-mono">
+              {sessionElapsed > 0
+                ? `${Math.floor(sessionElapsed / 60)}:${(sessionElapsed % 60).toFixed(0).padStart(2, '0')}`
+                : '0:00'}
+            </span>
+          </div>
+          <div className="h-4 w-px bg-[#2C2C2E]"></div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-[#8E8E93] tracking-wider uppercase">Signal</span>
+            <div className="w-24 h-2 bg-[#0B0B0D] rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  signalQuality > 0.4 ? 'bg-[#30D158]' : signalQuality > 0.2 ? 'bg-[#FF9F0A]' : 'bg-[#FF453A]'
+                }`}
+                style={{ width: `${Math.min(100, signalQuality * 100)}%` }}
+              />
+            </div>
+            <span className={`text-[11px] ${
+              signalQuality > 0.4 ? 'text-[#30D158]' : signalQuality > 0.2 ? 'text-[#FF9F0A]' : 'text-[#FF453A]'
+            }`}>
+              {(signalQuality * 100).toFixed(0)}%
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Top: Dual Oscilloscope Waveforms */}
       <div className="h-96 bg-[#16161A] rounded-xl p-6 border border-[#2C2C2E]">
         <div className="grid grid-cols-2 gap-6 h-full">
@@ -115,15 +161,15 @@ export function Page2Biometric({
 
       {/* Bottom Row */}
       <div className="flex gap-5 flex-1">
-        {/* Left: Live Vitals Matrix */}
-        <div className="flex-1 bg-[#16161A] rounded-xl p-6 border border-[#2C2C2E]">
+        {/* Left: Live Vitals Matrix + HRV */}
+        <div className="flex-1 bg-[#16161A] rounded-xl p-6 border border-[#2C2C2E] flex flex-col">
           <h3 className="text-[14px] text-[#8E8E93] tracking-wider uppercase mb-4">Live Vitals Matrix</h3>
           <div className="grid grid-cols-2 gap-4 h-[calc(100%-2rem)]">
             {/* Heart Rate */}
             <div className="bg-[#0B0B0D] rounded-lg p-4 flex flex-col justify-between border border-[#2C2C2E]">
               <span className="text-[11px] text-[#8E8E93] tracking-wider uppercase">Heart Rate</span>
               <div className="flex items-baseline">
-                <span className="text-5xl font-medium text-white">{Math.round(vitals.heartRate)}</span>
+                <span className="text-5xl font-medium text-white">{faceTracked && vitals.heartRate > 0 ? Math.round(vitals.heartRate) : '--'}</span>
                 <span className="text-[11px] text-[#8E8E93] ml-2 mb-2">BPM</span>
               </div>
             </div>
@@ -132,7 +178,7 @@ export function Page2Biometric({
             <div className="bg-[#0B0B0D] rounded-lg p-4 flex flex-col justify-between border border-[#2C2C2E]">
               <span className="text-[11px] text-[#8E8E93] tracking-wider uppercase">Respiration</span>
               <div className="flex items-baseline">
-                <span className="text-5xl font-medium text-white">{Math.round(vitals.respiration)}</span>
+                <span className="text-5xl font-medium text-white">{faceTracked && vitals.respiration > 0 ? Math.round(vitals.respiration) : '--'}</span>
                 <span className="text-[11px] text-[#8E8E93] ml-2 mb-2">BR/MIN</span>
               </div>
             </div>
@@ -141,7 +187,7 @@ export function Page2Biometric({
             <div className="bg-[#0B0B0D] rounded-lg p-4 flex flex-col justify-between border border-[#2C2C2E]">
               <span className="text-[11px] text-[#8E8E93] tracking-wider uppercase">Blood Oxygen</span>
               <div className="flex items-baseline">
-                <span className="text-5xl font-medium text-white">{Math.round(vitals.bloodOxygen)}</span>
+                <span className="text-5xl font-medium text-white">{faceTracked && vitals.bloodOxygen > 0 ? Math.round(vitals.bloodOxygen) : '--'}</span>
                 <span className="text-[11px] text-[#8E8E93] ml-2 mb-2">% SpO2</span>
               </div>
             </div>
@@ -150,8 +196,32 @@ export function Page2Biometric({
             <div className="bg-[#0B0B0D] rounded-lg p-4 flex flex-col justify-between border border-[#2C2C2E]">
               <span className="text-[11px] text-[#8E8E93] tracking-wider uppercase">Core Temp</span>
               <div className="flex items-baseline">
-                <span className="text-5xl font-medium text-white">{vitals.temperature.toFixed(1)}</span>
+                <span className="text-5xl font-medium text-white">{faceTracked && vitals.temperature > 0 ? vitals.temperature.toFixed(1) : '--'}</span>
                 <span className="text-[11px] text-[#8E8E93] ml-2 mb-2">°C</span>
+              </div>
+            </div>
+          </div>
+
+          {/* HRV Metrics Row */}
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <div className="bg-[#0B0B0D] rounded-lg px-3 py-2 border border-[#2C2C2E]">
+              <span className="text-[10px] text-[#8E8E93] tracking-wider uppercase">RMSSD</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-lg font-medium text-white">{faceTracked && hrvMetrics.rmssd > 0 ? hrvMetrics.rmssd.toFixed(1) : '--'}</span>
+                <span className="text-[10px] text-[#8E8E93]">ms</span>
+              </div>
+            </div>
+            <div className="bg-[#0B0B0D] rounded-lg px-3 py-2 border border-[#2C2C2E]">
+              <span className="text-[10px] text-[#8E8E93] tracking-wider uppercase">SDNN</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-lg font-medium text-white">{faceTracked && hrvMetrics.sdnn > 0 ? hrvMetrics.sdnn.toFixed(1) : '--'}</span>
+                <span className="text-[10px] text-[#8E8E93]">ms</span>
+              </div>
+            </div>
+            <div className="bg-[#0B0B0D] rounded-lg px-3 py-2 border border-[#2C2C2E]">
+              <span className="text-[10px] text-[#8E8E93] tracking-wider uppercase">PNS Index</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-lg font-medium text-white">{faceTracked && hrvMetrics.pnsIndex > 0 ? hrvMetrics.pnsIndex.toFixed(2) : '--'}</span>
               </div>
             </div>
           </div>

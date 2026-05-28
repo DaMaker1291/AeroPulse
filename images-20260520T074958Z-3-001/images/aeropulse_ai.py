@@ -677,6 +677,19 @@ class SharedState:
         self.fft_freqs = np.linspace(0, 25, 100).tolist()
         self.fft_power = [0.5] * 100
 
+        # HRV metrics
+        self.hrv_rmssd = 0.0
+        self.hrv_sdnn = 0.0
+        self.hrv_pns_index = 0.0
+
+        # Session tracking
+        self.session_start = 0.0
+
+        # Vitals trend history (rolling 120 samples at ~3Hz = 40s window)
+        self.hr_history = deque(maxlen=120)
+        self.spo2_history = deque(maxlen=120)
+        self.rr_history = deque(maxlen=120)
+
     def get_hr(self):
         with self.lock: return self.hr
     def set_hr(self, v):
@@ -766,10 +779,35 @@ class SharedState:
         with self.lock: return self.lighting_warning
     def set_lighting_warning(self, w):
         with self.lock: self.lighting_warning = str(w)
+    def set_hrv(self, rmssd, sdnn, pns):
+        with self.lock:
+            self.hrv_rmssd = float(rmssd)
+            self.hrv_sdnn = float(sdnn)
+            self.hrv_pns_index = float(pns)
+    def get_hrv(self):
+        with self.lock: return (self.hrv_rmssd, self.hrv_sdnn, self.hrv_pns_index)
     def set_latest_frame_jpeg(self, jpeg_bytes):
         with self.lock: self._latest_frame_jpeg = jpeg_bytes
     def get_latest_frame_jpeg(self):
         with self.lock: return self._latest_frame_jpeg
+    def set_session_start(self, t):
+        with self.lock: self.session_start = float(t)
+    def get_session_elapsed(self):
+        with self.lock:
+            if self.session_start <= 0:
+                return 0.0
+            return time.time() - self.session_start
+    def push_vitals_trend(self, hr, spo2, rr):
+        with self.lock:
+            if hr > 0:
+                self.hr_history.append(float(hr))
+            if spo2 > 0:
+                self.spo2_history.append(float(spo2))
+            if rr > 0:
+                self.rr_history.append(float(rr))
+    def get_vitals_trend(self):
+        with self.lock:
+            return (list(self.hr_history), list(self.spo2_history), list(self.rr_history))
 
 # =====================================================================
 # THREAD 1: ASYNCHRONOUS CAMERA GRABBER
@@ -1481,6 +1519,7 @@ class DSPEngine(Thread):
             self.hub.set_ellipse_aligned(False)
             self.hub.set_face_locked(False)
             self.hub.set_calibrate(0.0, None)
+            self.hub.set_session_start(0.0)
             return out
 
         self.hub.set_face_tracked(True)
@@ -1517,6 +1556,10 @@ class DSPEngine(Thread):
 
         ellipse_locked = True
         self.hub.set_face_locked(True)
+
+        # Start session timer on first face lock
+        if self.hub.get_session_elapsed() <= 0.5:
+            self.hub.set_session_start(ts)
 
         lock_start = self.hub.lock_start_time
         if lock_start is None:
@@ -1895,6 +1938,22 @@ class DSPEngine(Thread):
             self.hub.set_rr(self._ema_rr)
 
         # -----------------------------------------------------------------
+        # HRV PIPELINE — Heart Rate Variability from IBI (Inter-Beat Intervals)
+        # RMSSD: root mean square of successive differences (short-term vagal tone)
+        # SDNN:  standard deviation of NN intervals (overall variability)
+        # PNS Index: parasympathetic index derived from RMSSD/SDNN ratio
+        # -----------------------------------------------------------------
+        if len(pks) >= 6 and fs > 0:
+            ibis_ms = np.diff(pks) / max(fs, 0.1) * 1000.0
+            ibis_ms = ibis_ms[(ibis_ms > 300) & (ibis_ms < 2000)]
+            if len(ibis_ms) >= 4:
+                diffs = np.diff(ibis_ms)
+                rmssd = float(np.sqrt(np.mean(diffs ** 2)))
+                sdnn = float(np.std(ibis_ms))
+                pns_index = float(np.clip(1.0 - (rmssd / max(sdnn, 1.0)), 0.0, 1.0))
+                self.hub.set_hrv(rmssd, sdnn, pns_index)
+
+        # -----------------------------------------------------------------
         # BLOOD PRESSURE — Pulse Wave Analysis + Continuous HR/Amplitude Modulation
         # Systolic = 4.2*dP/dt_max - 0.15*Tc + 98.4
         # Diastolic = 2.1*AI + 0.08*Tc + 61.2
@@ -2021,6 +2080,13 @@ class DSPEngine(Thread):
         else:
             fft_p = [0.5] * 100
         self.hub.set_fft_data(fft_f.tolist(), fft_p)
+
+        # ── Push vitals trend data (every 10 frames) ─────────────────
+        if self._frame_counter % 10 == 0:
+            hr_now = self.hub.get_hr()
+            spo2_now = self.hub.get_spo2()
+            rr_now = self.hub.get_rr()
+            self.hub.push_vitals_trend(hr_now, spo2_now, rr_now)
 
         # ── AI Log Console Streaming (3 Hz) ──────────────────────────
         self._log_counter += 1
@@ -2215,29 +2281,45 @@ class WebSocketServer:
         rppg, chest, m3, m4 = self.hub.get_buffers()
         sym, lag, comp, tremor_hz = self.hub.get_triage()
         fft_f, fft_p = self.hub.get_fft_data()
+        face_tracked = self.hub.is_face_tracked()
+        quality = self.hub.get_quality()
+        hrv_rmssd, hrv_sdnn, hrv_pns = self.hub.get_hrv()
+        hr_trend, spo2_trend, rr_trend = self.hub.get_vitals_trend()
         return {
-            "targetStatus": "locked" if self.hub.is_face_tracked() else "standby",
+            "targetStatus": "locked" if face_tracked else "standby",
             "cameraConnected": self.hub.is_camera_connected(),
-            "faceTracked": self.hub.is_face_tracked(),
+            "faceTracked": face_tracked,
+            "signalQuality": round(quality, 3),
+            "sessionElapsed": round(self.hub.get_session_elapsed(), 1),
+            "hrv": {
+                "rmssd": round(hrv_rmssd, 1) if face_tracked else 0,
+                "sdnn": round(hrv_sdnn, 1) if face_tracked else 0,
+                "pnsIndex": round(hrv_pns, 3) if face_tracked else 0,
+            },
             "vitals": {
-                "heartRate": hr,
-                "respiration": rr,
-                "bloodOxygen": spo2,
-                "temperature": sbp / 3.2 if sbp else 0.0,
+                "heartRate": hr if face_tracked else 0.0,
+                "respiration": rr if face_tracked else 0.0,
+                "bloodOxygen": spo2 if face_tracked else 0.0,
+                "temperature": (sbp / 3.2) if (face_tracked and sbp) else 0.0,
             },
             "mode": "live",
             "rppg_wave": rppg[-50:],
             "m3_wave": m3[-50:],
             "m4_wave": m4[-50:],
             "triage": {
-                "bilateralSymmetry": round(sym, 1),
-                "neuromuscularLag": round(lag, 1),
-                "vascularCompliance": round(comp, 1),
-                "tremorPeakHz": round(tremor_hz, 2),
+                "bilateralSymmetry": round(sym, 1) if face_tracked else 0.0,
+                "neuromuscularLag": round(lag, 1) if face_tracked else 0.0,
+                "vascularCompliance": round(comp, 1) if face_tracked else 0.0,
+                "tremorPeakHz": round(tremor_hz, 2) if face_tracked else 0.0,
             },
             "fft": {
                 "freqs": fft_f[-100:],
                 "power": fft_p[-100:],
+            },
+            "vitalsTrend": {
+                "heartRate": hr_trend[-60:],
+                "spo2": spo2_trend[-60:],
+                "respiration": rr_trend[-60:],
             },
         }
 
@@ -2531,6 +2613,8 @@ class MainWindow(QMainWindow):
         self.lbl_rr = self._make_vital_card(v_lay, "RESPIRATION", "--", "Br/Min", 0, 1)
         self.lbl_spo2 = self._make_vital_card(v_lay, "BLOOD OXYGEN", "--", "% SpO2", 1, 0)
         self.lbl_bp = self._make_vital_card(v_lay, "BLOOD PRESSURE", "--/--", "mmHg", 1, 1)
+        self.lbl_hrv_rmssd = self._make_vital_card(v_lay, "HRV RMSSD", "--", "ms", 2, 0)
+        self.lbl_hrv_sdnn = self._make_vital_card(v_lay, "HRV SDNN", "--", "ms", 2, 1)
         right_lay.addWidget(self.vitals_card)
 
         # AI Console
@@ -3138,16 +3222,21 @@ class MainWindow(QMainWindow):
         sb.setValue(sb.maximum())
 
         # Vitals display
+        hrv_rmssd, hrv_sdnn, hrv_pns = self.hub.get_hrv()
         if face and hr > 0:
             self.lbl_hr.setText(f"{hr:.1f}")
             self.lbl_rr.setText(f"{rr:.0f}")
             self.lbl_spo2.setText(f"{spo2:.1f}")
             self.lbl_bp.setText(f"{sbp}/{dbp}")
+            self.lbl_hrv_rmssd.setText(f"{hrv_rmssd:.1f}" if hrv_rmssd > 0 else "--")
+            self.lbl_hrv_sdnn.setText(f"{hrv_sdnn:.1f}" if hrv_sdnn > 0 else "--")
         else:
             self.lbl_hr.setText("--")
             self.lbl_rr.setText("--")
             self.lbl_spo2.setText("--")
             self.lbl_bp.setText("--/--")
+            self.lbl_hrv_rmssd.setText("--")
+            self.lbl_hrv_sdnn.setText("--")
 
         # Dynamic AI confidence from rPPG quality + intake progress
         conf = 0.50 + 0.25 * quality + 0.05 * min(len(self.hub.intake_answers), 5)

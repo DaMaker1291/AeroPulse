@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ReferenceLine, LineChart, Line } from 'recharts';
 import { FileText, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
@@ -13,13 +13,15 @@ interface Page3Props {
   psdData: Array<{ freq: number; amplitude: number }>;
   enduranceSummary: string;
   sendWs: (cmd: string, data?: any) => void;
+  vitalsTrend: { heartRate: number[]; spo2: number[]; respiration: number[] };
 }
 
 export function Page3Triage({
   metrics,
   psdData,
   enduranceSummary,
-  sendWs
+  sendWs,
+  vitalsTrend
 }: Page3Props) {
   const [reportGenerated, setReportGenerated] = useState(false);
 
@@ -102,6 +104,59 @@ export function Page3Triage({
             </div>
             <p className="text-[11px] text-[#8E8E93] mt-2">Cross-referenced profile</p>
           </div>
+        </div>
+      </div>
+
+      {/* Vitals Trend Chart */}
+      <div className="bg-[#16161A] rounded-xl p-6 border border-[#2C2C2E]">
+        <div className="mb-3">
+          <h3 className="text-[14px] text-[#8E8E93] tracking-wider uppercase">Vitals Trend</h3>
+          <p className="text-[11px] text-[#8E8E93] mt-1">Real-time session vitals history</p>
+        </div>
+        <div className="h-32 bg-[#0B0B0D] rounded-lg p-2 border border-[#2C2C2E]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={vitalsTrend.heartRate.map((hr, i) => ({
+                index: i,
+                heartRate: hr,
+                spo2: vitalsTrend.spo2[i] || 0,
+                respiration: vitalsTrend.respiration[i] || 0,
+              }))}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#2C2C2E" opacity={0.3} />
+              <XAxis hide />
+              <YAxis hide domain={[40, 180]} />
+              <Line
+                type="monotone"
+                dataKey="heartRate"
+                stroke="#30D158"
+                strokeWidth={1.5}
+                dot={false}
+                isAnimationActive={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="spo2"
+                stroke="#0A84FF"
+                strokeWidth={1.5}
+                dot={false}
+                isAnimationActive={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="respiration"
+                stroke="#BF5AF2"
+                strokeWidth={1.5}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="mt-2 flex items-center gap-4 text-[10px] text-[#8E8E93]">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#30D158]" /> HR</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#0A84FF]" /> SpO2</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#BF5AF2]" /> RR</span>
         </div>
       </div>
 
