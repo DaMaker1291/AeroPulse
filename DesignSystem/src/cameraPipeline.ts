@@ -154,8 +154,40 @@ export function computeHeartRate(filtered: Float64Array, fs: number): HRResult {
     ? (maxPower - secondMaxPower) / maxPower
     : 0;
 
-  // Harmonic ratio: power at 2× fundamental vs fundamental peak
-  const harmonicFreq = peakFreq * 2;
+  // Sub-harmonic check: if the dominant peak has strong energy at half its
+  // frequency, the real HR is likely the sub-harmonic (2nd harmonic lock fix).
+  // e.g., peak at 110 BPM, half at 55 BPM — typical rPPG false high.
+  const subFreq = peakFreq / 2;
+  let subPower = 0;
+  if (subFreq >= 0.75) {
+    for (let i = 0; i < freqs.length; i++) {
+      if (Math.abs(freqs[i] - subFreq) < binSpacing * 2 && power[i] > subPower) {
+        subPower = power[i];
+      }
+    }
+  }
+  const subRatio = maxPower > 0 ? subPower / Math.max(maxPower, 1e-30) : 0;
+  // If sub-harmonic has >30% of dominant peak energy, switch to it
+  let finalPeakFreq = peakFreq;
+  let finalPeakIdx = peakIdx;
+  if (subRatio > 0.3 && subPower > meanPower * 2) {
+    finalPeakFreq = subFreq;
+    // Find nearest bin index
+    let minDist = Infinity;
+    for (let i = 2; i < freqs.length; i++) {
+      if (Math.abs(freqs[i] - subFreq) < minDist) {
+        minDist = Math.abs(freqs[i] - subFreq);
+        finalPeakIdx = i;
+      }
+    }
+  }
+
+  const finalInterpIdx = gaussInterpolation(mag, finalPeakIdx);
+  const finalPeak = finalInterpIdx * binSpacing;
+  const finalBpm = finalPeak * 60;
+
+  // Harmonic ratio: power at 2× fundamental vs fundamental peak (recalculated)
+  const harmonicFreq = finalPeak * 2;
   let harmonicPower = 0;
   for (let i = 0; i < freqs.length; i++) {
     if (Math.abs(freqs[i] - harmonicFreq) < binSpacing * 2 && power[i] > harmonicPower) {
@@ -169,11 +201,12 @@ export function computeHeartRate(filtered: Float64Array, fs: number): HRResult {
   // Composite quality score (0-1)
   const snrNorm = Math.min(1, Math.max(0, (snr - 1.5) / 5.0));
   const promNorm = Math.min(1, Math.max(0, peakProminence * 2));
-  const harmNorm = Math.min(1, harmonicRatio * 3);
+  // Penalize if sub-harmonic was ambiguous (subRatio near 0.3)
+  const harmNorm = Math.min(1, harmonicRatio * 3) * (1 - Math.max(0, (subRatio - 0.2) * 2) * 0.3);
   const quality = 0.45 * snrNorm + 0.3 * promNorm + 0.25 * harmNorm;
 
   return {
-    bpm: peakFreq * 60, freqs, power, snr, quality,
+    bpm: finalBpm, freqs, power, snr, quality,
     peakProminence, harmonicRatio,
   };
 }
