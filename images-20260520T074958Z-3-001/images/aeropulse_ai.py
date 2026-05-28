@@ -1998,8 +1998,8 @@ class DSPEngine(Thread):
             resp_drift = 2.5 * np.sin(self._bp_temporal_phase)
 
             # Composite modulation
-            sys_mod = amp_mod + hrv_mod + resp_drift + np.random.normal(0, 0.8)
-            dia_mod = amp_mod * 0.4 + hrv_mod * 0.3 + resp_drift * 0.3 + np.random.normal(0, 0.5)
+            sys_mod = amp_mod + hrv_mod + resp_drift
+            dia_mod = amp_mod * 0.4 + hrv_mod * 0.3 + resp_drift * 0.3
 
             new_sbp = int(np.clip(sbp_new + sys_mod, sbp_new - 5, sbp_new + 5))
             new_dbp = int(np.clip(dbp_new + dia_mod, dbp_new - 3, dbp_new + 3))
@@ -2177,33 +2177,73 @@ class DSPEngine(Thread):
         return out
 
 # =====================================================================
-# THREAD 3: VEX USB SERIAL PARSER (SIMULATED)
+# THREAD 3: VEX BRAIN SERIAL PARSER
 # =====================================================================
 class VEXSerialParser(Thread):
-    """Monitors VEX COM port at 115200 baud. Below 0.01 Nm forces flat 0.0."""
+    """Reads real VEX Brain torque data from serial port at 115200 baud.
+    Expects lines like: M3_TORQUE:1.23,M3_POS:45,M4_TORQUE:0.89,M4_POS:120
+    Falls back to zero if no serial device found."""
     def __init__(self, hub: SharedState):
         super().__init__(daemon=True)
         self.hub = hub
         self.running = True
-        self._flatline = True
+        self._ser = None
+        self._attempted = False
+
+    def _open_serial(self):
+        import serial
+        import serial.tools.list_ports
+        ports = list(serial.tools.list_ports.comports())
+        for p in ports:
+            try:
+                ser = serial.Serial(p.device, 115200, timeout=0.5)
+                self.hub.add_log(f"VEX Brain connected on {p.device}")
+                return ser
+            except Exception:
+                continue
+        return None
 
     def run(self):
-        self.hub.add_log("VEX Serial parser online — monitoring COM port at 115200 baud.")
+        while self.running and self._ser is None and not self._attempted:
+            self._attempted = True
+            for port_candidate in ['COM3', 'COM4', 'COM5', 'COM6', 'COM7']:
+                try:
+                    import serial
+                    self._ser = serial.Serial(port_candidate, 115200, timeout=0.5)
+                    self.hub.add_log(f"VEX Brain connected on {port_candidate}")
+                    break
+                except Exception:
+                    continue
+            if self._ser is None:
+                self.hub.add_log("No VEX Brain detected — torque data unavailable")
+
+        if self._ser is None:
+            while self.running:
+                time.sleep(1.0)
+            return
+
         while self.running:
-            if self.hub.endurance_active:
-                t = time.time()
-                m3 = 45.0 + 8.0 * math.sin(t * 2.2) + np.random.normal(0, 0.2)
-                m4 = 43.0 + 10.0 * math.sin(t * 1.9) + np.random.normal(0, 0.2)
-                # Apply the 0.01 Nm threshold
-                m3 = 0.0 if m3 < 0.01 else m3
-                m4 = 0.0 if m4 < 0.01 else m4
-                self._flatline = (m3 < 0.01 and m4 < 0.01)
-            else:
+            try:
+                line = self._ser.readline().decode('utf-8', errors='ignore').strip()
+                if not line:
+                    continue
+                # Parse: M3_TORQUE:1.23,M3_POS:45,M4_TORQUE:0.89,M4_POS:120
+                parts = line.split(',')
                 m3 = 0.0
                 m4 = 0.0
-                self._flatline = True
-            self.hub.append_m3(m3)
-            self.hub.append_m4(m4)
+                for p in parts:
+                    if p.startswith('M3_TORQUE:'):
+                        m3 = max(0.0, float(p.split(':')[1]))
+                    elif p.startswith('M4_TORQUE:'):
+                        m4 = max(0.0, float(p.split(':')[1]))
+                if m3 < 0.01:
+                    m3 = 0.0
+                if m4 < 0.01:
+                    m4 = 0.0
+                self.hub.append_m3(m3)
+                self.hub.append_m4(m4)
+            except Exception:
+                pass
             time.sleep(0.04)
 
 # =====================================================================
@@ -2300,7 +2340,6 @@ class WebSocketServer:
                 "heartRate": hr if face_tracked else 0.0,
                 "respiration": rr if face_tracked else 0.0,
                 "bloodOxygen": spo2 if face_tracked else 0.0,
-                "temperature": (sbp / 3.2) if (face_tracked and sbp) else 0.0,
             },
             "mode": "live",
             "rppg_wave": rppg[-50:],

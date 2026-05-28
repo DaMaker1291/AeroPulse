@@ -51,20 +51,20 @@ export function Page1AdaptiveIntake({
   }, [targetStatus, answers, onUnlockNavigation]);
 
   return (
-    <div className="flex gap-5 h-full min-h-0">
+    <div className="flex flex-col lg:flex-row gap-5 h-full min-h-0">
       {/* Left Container: AI Adaptive Clinical Screener */}
-      <div className="flex-1 min-w-0 bg-[#16161A] rounded-xl p-6 flex flex-col min-h-0">
+      <div className="flex-1 min-w-0 bg-[#16161A] rounded-xl p-4 sm:p-6 flex flex-col min-h-0">
         {/* Header with AI Confidence (fixed) */}
-        <div className="flex-shrink-0 mb-6">
-          <div className="inline-flex items-center gap-2 bg-[#0B0B0D] px-4 py-2 rounded-lg border border-[#2C2C2E]">
+        <div className="flex-shrink-0 mb-4 sm:mb-6">
+          <div className="inline-flex items-center gap-2 bg-[#0B0B0D] px-3 sm:px-4 py-2 rounded-lg border border-[#2C2C2E]">
             <div className="w-2 h-2 rounded-full bg-[#30D158] animate-pulse"></div>
-            <span className="text-[11px] text-[#8E8E93] tracking-wider uppercase">AI Confidence Index</span>
-            <span className="text-[24px] font-medium text-white ml-2">{aiConfidence.toFixed(2)}</span>
+            <span className="text-[10px] sm:text-[11px] text-[#8E8E93] tracking-wider uppercase">AI Confidence Index</span>
+            <span className="text-[18px] sm:text-[24px] font-medium text-white ml-2">{aiConfidence.toFixed(2)}</span>
           </div>
         </div>
 
         {/* Main Question (scrollable if needed) */}
-        <div className="flex-1 flex items-center justify-center min-h-0 overflow-auto">
+        <div className="flex-1 flex items-center justify-center min-h-0 overflow-auto py-2 sm:py-4">
           <motion.div
             key={currentQuestion}
             initial={{ opacity: 0, y: 20 }}
@@ -73,29 +73,29 @@ export function Page1AdaptiveIntake({
             transition={{ duration: 0.2, ease: 'easeOut' }}
             className="max-w-lg w-full"
           >
-            <h2 className="text-[24px] font-medium text-white leading-relaxed text-center break-words">
+            <h2 className="text-[18px] sm:text-[24px] font-medium text-white leading-relaxed text-center break-words">
               {questions[currentQuestion]}
             </h2>
           </motion.div>
         </div>
 
         {/* Answer Buttons (fixed) */}
-        <div className="flex-shrink-0 flex gap-4 justify-center mb-6">
+        <div className="flex-shrink-0 flex flex-col sm:flex-row gap-2 sm:gap-4 justify-center mb-4 sm:mb-6">
           <button
             onClick={() => handleAnswer('yes')}
-            className="w-44 h-16 rounded-xl bg-[#16161A] border-2 border-[#30D158] text-white hover:bg-[#30D158]/10 transition-all duration-150"
+            className="w-full sm:w-44 h-12 sm:h-16 rounded-xl bg-[#16161A] border-2 border-[#30D158] text-white hover:bg-[#30D158]/10 transition-all duration-150 text-[14px] sm:text-[16px]"
           >
             YES
           </button>
           <button
             onClick={() => handleAnswer('no')}
-            className="w-44 h-16 rounded-xl bg-[#0A84FF] text-white hover:bg-[#0A84FF]/90 transition-all duration-150"
+            className="w-full sm:w-44 h-12 sm:h-16 rounded-xl bg-[#0A84FF] text-white hover:bg-[#0A84FF]/90 transition-all duration-150 text-[14px] sm:text-[16px]"
           >
             NO
           </button>
           <button
             onClick={() => handleAnswer('idk')}
-            className="w-44 h-16 rounded-xl bg-[#16161A] border-2 border-[#2C2C2E] text-[#8E8E93] hover:bg-[#2C2C2E]/30 transition-all duration-150"
+            className="w-full sm:w-44 h-12 sm:h-16 rounded-xl bg-[#16161A] border-2 border-[#2C2C2E] text-[#8E8E93] hover:bg-[#2C2C2E]/30 transition-all duration-150 text-[14px] sm:text-[16px]"
           >
             I DON'T KNOW
           </button>
@@ -103,14 +103,14 @@ export function Page1AdaptiveIntake({
 
         {/* Status Indicator (fixed) */}
         <div className="flex-shrink-0 bg-[#0B0B0D] rounded-lg px-4 py-3 border border-[#2C2C2E]">
-          <div className="text-[11px] text-[#8E8E93] tracking-wider">
+          <div className="text-[10px] sm:text-[11px] text-[#8E8E93] tracking-wider">
             TARGET HARDWARE CALIBRATION STATUS: <span className="text-[#FF9F0A]">STANDBY</span>
           </div>
         </div>
       </div>
 
       {/* Right Container: Targeting Viewport */}
-      <div className="flex-1 min-w-0 bg-[#16161A] rounded-xl p-6 flex flex-col min-h-0">
+      <div className="flex-1 min-w-0 bg-[#16161A] rounded-xl p-4 sm:p-6 flex flex-col min-h-0">
         {/* Camera Viewport */}
         <div className="flex-1 min-h-0 bg-[#0B0B0D] rounded-lg relative overflow-hidden mb-4 border border-[#2C2C2E]">
           {/* Simulated Camera View */}
@@ -184,9 +184,9 @@ export function Page1AdaptiveIntake({
         </div>
 
         {/* Motor Control Sliders */}
-        <div className="flex-shrink-0 space-y-4">
+        <div className="flex-shrink-0 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           <div>
-            <label className="block text-[11px] text-[#8E8E93] tracking-wider mb-2 uppercase">
+            <label className="block text-[10px] sm:text-[11px] text-[#8E8E93] tracking-wider mb-2 uppercase">
               Tower Panning (Motor 1)
             </label>
             <input
@@ -200,11 +200,11 @@ export function Page1AdaptiveIntake({
                 background: `linear-gradient(to right, #0A84FF 0%, #0A84FF ${panValue}%, #2C2C2E ${panValue}%, #2C2C2E 100%)`
               }}
             />
-            <div className="text-right text-[11px] text-[#8E8E93] mt-1">{panValue}°</div>
+            <div className="text-right text-[10px] sm:text-[11px] text-[#8E8E93] mt-1">{panValue}°</div>
           </div>
 
           <div>
-            <label className="block text-[11px] text-[#8E8E93] tracking-wider mb-2 uppercase">
+            <label className="block text-[10px] sm:text-[11px] text-[#8E8E93] tracking-wider mb-2 uppercase">
               Device Tilting (Motor 2)
             </label>
             <input
@@ -218,7 +218,7 @@ export function Page1AdaptiveIntake({
                 background: `linear-gradient(to right, #0A84FF 0%, #0A84FF ${tiltValue}%, #2C2C2E ${tiltValue}%, #2C2C2E 100%)`
               }}
             />
-            <div className="text-right text-[11px] text-[#8E8E93] mt-1">{tiltValue}°</div>
+            <div className="text-right text-[10px] sm:text-[11px] text-[#8E8E93] mt-1">{tiltValue}°</div>
           </div>
         </div>
       </div>

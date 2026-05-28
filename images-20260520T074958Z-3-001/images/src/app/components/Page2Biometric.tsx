@@ -8,7 +8,6 @@ interface Page2Props {
     heartRate: number;
     respiration: number;
     bloodOxygen: number;
-    temperature: number;
     compliance: number;
   };
   waveData1: Array<{ time: number; value: number }>;
@@ -192,14 +191,6 @@ export function Page2Biometric({
               </div>
             </div>
 
-            {/* Core Temperature */}
-            <div className="bg-[#0B0B0D] rounded-lg p-4 flex flex-col justify-between border border-[#2C2C2E]">
-              <span className="text-[11px] text-[#8E8E93] tracking-wider uppercase">Core Temp</span>
-              <div className="flex items-baseline">
-                <span className="text-5xl font-medium text-white">{faceTracked && vitals.temperature > 0 ? vitals.temperature.toFixed(1) : '--'}</span>
-                <span className="text-[11px] text-[#8E8E93] ml-2 mb-2">°C</span>
-              </div>
-            </div>
           </div>
 
           {/* HRV Metrics Row */}

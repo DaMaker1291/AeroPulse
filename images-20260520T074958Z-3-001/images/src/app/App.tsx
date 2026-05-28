@@ -26,7 +26,6 @@ export default function App() {
     heartRate: 0,
     respiration: 0,
     bloodOxygen: 0,
-    temperature: 0,
     compliance: 0,
   });
   const [metrics, setMetrics] = useState({
@@ -103,7 +102,7 @@ export default function App() {
           if (data.vitals) {
             setVitals(prev => {
               if (!data.faceTracked) {
-                return { heartRate: 0, respiration: 0, bloodOxygen: 0, temperature: 0, compliance: 0 };
+                return { heartRate: 0, respiration: 0, bloodOxygen: 0, compliance: 0 };
               }
               return { ...prev, ...data.vitals };
             });

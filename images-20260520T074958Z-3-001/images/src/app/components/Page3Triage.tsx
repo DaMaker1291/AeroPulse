@@ -46,25 +46,6 @@ export function Page3Triage({
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[14px] text-[#8E8E93] tracking-wider uppercase font-medium">Diagnostic Overview</h3>
           <div className="flex gap-2">
-            <button
-              onClick={() => sendWs("TRIGGER_DEMO", { kind: "HOMEOSTASIS" })}
-              className="px-3 py-1 bg-[#1C1C1E] border border-[#2C2C2E] rounded-md text-[11px] text-[#30D158] uppercase hover:bg-[#30D158]/10 cursor-pointer transition-colors"
-            >
-              Simulate Homeostasis
-            </button>
-            <button
-              onClick={() => sendWs("TRIGGER_DEMO", { kind: "PATHOLOGY" })}
-              className="px-3 py-1 bg-[#1C1C1E] border border-[#2C2C2E] rounded-md text-[11px] text-[#FF453A] uppercase hover:bg-[#FF453A]/10 cursor-pointer transition-colors"
-            >
-              Simulate Pathology
-            </button>
-            <button
-              onClick={() => sendWs("TRIGGER_DEMO", { kind: "LIVE" })}
-              className="px-3 py-1 bg-[#1C1C1E] border border-[#2C2C2E] rounded-md text-[11px] text-[#0A84FF] uppercase hover:bg-[#0A84FF]/10 cursor-pointer transition-colors"
-            >
-              Reset Live
-            </button>
-          </div>
         </div>
         <div className="grid grid-cols-3 gap-6">
           {/* Bilateral Symmetry */}
