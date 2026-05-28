@@ -30,7 +30,7 @@ export function PageVexBridge({ vex }: PageVexProps) {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Cable className="w-4 h-4 sm:w-5 sm:h-5 text-[#0A84FF]" />
-            <span className="text-[12px] sm:text-[13px] font-semibold text-white">VEX Brain Bridge</span>
+            <span className="text-[12px] sm:text-[13px] font-semibold text-white">{vex.state.connected ? vex.state.portInfo : 'Serial Bridge'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${vex.state.connected ? 'bg-[#30D158]' : 'bg-[#FF453A]'}`}
@@ -73,7 +73,7 @@ export function PageVexBridge({ vex }: PageVexProps) {
               className="w-full py-2.5 sm:py-3 rounded-xl bg-[#0A84FF] text-white text-[12px] sm:text-[13px] font-semibold hover:bg-[#0A84FF]/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={!vex.state.webSerialAvailable}>
               <Usb className="w-4 h-4" />
-              {vex.state.webSerialAvailable ? 'Connect VEX Brain' : 'Web Serial API Unavailable'}
+              {vex.state.webSerialAvailable ? 'Connect Device' : 'Web Serial API Unavailable'}
             </button>
           )}
         </div>
@@ -209,7 +209,7 @@ export function PageVexBridge({ vex }: PageVexProps) {
           {[
             { ic: Monitor, label: 'Upload Firmware', detail: 'pros build && pros upload — loop starts instantly' },
             { ic: Usb, label: 'Connect USB', detail: 'Keep VEX Brain connected via USB-C to computer' },
-            { ic: Plug, label: 'Click "Connect VEX Brain"', detail: 'Previously-authorized ports connect automatically' },
+            { ic: Plug, label: 'Click "Connect Device"', detail: 'Previously-authorized ports connect automatically' },
             { ic: ArrowLeftRight, label: 'Run Diagnosis', detail: 'Click "Run Full Diagnosis" — moves to ±45°, measures torque' },
           ].map((s, i) => {
             const Icon = s.ic;

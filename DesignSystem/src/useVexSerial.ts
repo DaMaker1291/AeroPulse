@@ -102,7 +102,8 @@ export function useVexSerial() {
       ? `USB VID:${portInfo.usbVendorId} PID:${portInfo.usbProductId}`
       : `Serial Port`;
 
-    setState(s => ({ ...s, connected: true, portInfo: portLabel, streaming: true, error: null }));
+    // Port opened but not yet confirmed — connected stays false until first valid data
+    setState(s => ({ ...s, portInfo: portLabel, streaming: true, error: null }));
 
     const textDecoder = new TextDecoderStream();
     port.readable.pipeTo(textDecoder.writable).catch(() => {});
@@ -115,8 +116,9 @@ export function useVexSerial() {
 
     let buf = '';
     let totalBytes = 0;
+    let receivedData = false;
     let firstDataTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
-      setState(s => s.connected ? { ...s, error: `Connected but no data (${totalBytes} raw bytes). Is bridge firmware running?` } : s);
+      setState(s => ({ ...s, error: `${portLabel} — no data received (${totalBytes} raw bytes). Is bridge firmware running?`, connected: false }));
     }, 8000);
 
     while (runningRef.current) {
@@ -152,6 +154,10 @@ export function useVexSerial() {
           const parsed = parseDataLine(line);
           if (parsed) {
             if (firstDataTimeout) { clearTimeout(firstDataTimeout); firstDataTimeout = null; }
+            if (!receivedData) {
+              receivedData = true;
+              setState(s => ({ ...s, connected: true, error: null }));
+            }
             // Track force history for peak/symmetry/fatigue analysis
             const histL = forceHistoryL.current;
             const histR = forceHistoryR.current;
