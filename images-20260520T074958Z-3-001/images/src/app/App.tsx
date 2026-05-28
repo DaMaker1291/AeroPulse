@@ -289,7 +289,7 @@ export default function App() {
 
         {/* Central Viewport */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 p-6 overflow-auto">
+          <div className="flex-1 p-6 overflow-auto min-h-0">
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentPage}
@@ -297,7 +297,7 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2, ease: 'easeOut' }}
-                className="h-full"
+                className="h-full min-h-0"
               >
                 {currentPage === 'intake' && (
                   <Page1AdaptiveIntake

@@ -51,11 +51,11 @@ export function Page1AdaptiveIntake({
   }, [targetStatus, answers, onUnlockNavigation]);
 
   return (
-    <div className="flex gap-5 h-full">
+    <div className="flex gap-5 h-full min-h-0">
       {/* Left Container: AI Adaptive Clinical Screener */}
-      <div className="flex-1 bg-[#16161A] rounded-xl p-6 flex flex-col">
-        {/* Header with AI Confidence */}
-        <div className="mb-6">
+      <div className="flex-1 min-w-0 bg-[#16161A] rounded-xl p-6 flex flex-col min-h-0">
+        {/* Header with AI Confidence (fixed) */}
+        <div className="flex-shrink-0 mb-6">
           <div className="inline-flex items-center gap-2 bg-[#0B0B0D] px-4 py-2 rounded-lg border border-[#2C2C2E]">
             <div className="w-2 h-2 rounded-full bg-[#30D158] animate-pulse"></div>
             <span className="text-[11px] text-[#8E8E93] tracking-wider uppercase">AI Confidence Index</span>
@@ -63,24 +63,24 @@ export function Page1AdaptiveIntake({
           </div>
         </div>
 
-        {/* Main Question */}
-        <div className="flex-1 flex items-center justify-center">
+        {/* Main Question (scrollable if needed) */}
+        <div className="flex-1 flex items-center justify-center min-h-0 overflow-auto">
           <motion.div
             key={currentQuestion}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="max-w-lg"
+            className="max-w-lg w-full"
           >
-            <h2 className="text-[24px] font-medium text-white leading-relaxed text-center">
+            <h2 className="text-[24px] font-medium text-white leading-relaxed text-center break-words">
               {questions[currentQuestion]}
             </h2>
           </motion.div>
         </div>
 
-        {/* Answer Buttons */}
-        <div className="flex gap-4 justify-center mb-6">
+        {/* Answer Buttons (fixed) */}
+        <div className="flex-shrink-0 flex gap-4 justify-center mb-6">
           <button
             onClick={() => handleAnswer('yes')}
             className="w-44 h-16 rounded-xl bg-[#16161A] border-2 border-[#30D158] text-white hover:bg-[#30D158]/10 transition-all duration-150"
@@ -101,8 +101,8 @@ export function Page1AdaptiveIntake({
           </button>
         </div>
 
-        {/* Status Indicator */}
-        <div className="bg-[#0B0B0D] rounded-lg px-4 py-3 border border-[#2C2C2E]">
+        {/* Status Indicator (fixed) */}
+        <div className="flex-shrink-0 bg-[#0B0B0D] rounded-lg px-4 py-3 border border-[#2C2C2E]">
           <div className="text-[11px] text-[#8E8E93] tracking-wider">
             TARGET HARDWARE CALIBRATION STATUS: <span className="text-[#FF9F0A]">STANDBY</span>
           </div>
@@ -110,9 +110,9 @@ export function Page1AdaptiveIntake({
       </div>
 
       {/* Right Container: Targeting Viewport */}
-      <div className="flex-1 bg-[#16161A] rounded-xl p-6 flex flex-col">
+      <div className="flex-1 min-w-0 bg-[#16161A] rounded-xl p-6 flex flex-col min-h-0">
         {/* Camera Viewport */}
-        <div className="flex-1 bg-[#0B0B0D] rounded-lg relative overflow-hidden mb-4 border border-[#2C2C2E]">
+        <div className="flex-1 min-h-0 bg-[#0B0B0D] rounded-lg relative overflow-hidden mb-4 border border-[#2C2C2E]">
           {/* Simulated Camera View */}
           {videoSrc ? (
             <img src={videoSrc} className="absolute inset-0 w-full h-full object-cover" alt="SaMD Clinical Camera" />
@@ -184,7 +184,7 @@ export function Page1AdaptiveIntake({
         </div>
 
         {/* Motor Control Sliders */}
-        <div className="space-y-4">
+        <div className="flex-shrink-0 space-y-4">
           <div>
             <label className="block text-[11px] text-[#8E8E93] tracking-wider mb-2 uppercase">
               Tower Panning (Motor 1)
