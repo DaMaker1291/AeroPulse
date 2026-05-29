@@ -1,31 +1,18 @@
 import { useState } from 'react';
-import { AccountCreation } from './components/AccountCreation';
 import AuthenticatedApp from './AuthenticatedApp';
-
-interface UserData {
-  name: string;
-  org: string;
-  role: string;
-  reasonForVisit: string;
-}
+import { IntroPage } from './components/IntroPage';
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
-  const [user, setUser] = useState<UserData | null>(null);
-
-  const handleAuth = (userData: UserData) => {
-    setUser(userData);
-    setAuthenticated(true);
-  };
 
   if (!authenticated) {
-    return <AccountCreation onComplete={handleAuth} />;
+    return <IntroPage onEnter={() => setAuthenticated(true)} />;
   }
 
   return (
     <AuthenticatedApp
-      user={user!}
-      onSignOut={() => { setAuthenticated(false); setUser(null); }}
+      user={{ name: 'Dr. Sarah Chen', org: 'Memorial Hospital', role: 'Neurologist', reasonForVisit: '' }}
+      onSignOut={() => setAuthenticated(false)}
     />
   );
 }
