@@ -147,8 +147,8 @@ export function Page1AdaptiveIntake({ onUnlockNavigation, targetStatus: propTarg
       setTimeout(() => {
         setTargetStatus('locked');
         onUnlockNavigation();
-      }, 2200);
-    }, 2800);
+      }, 600);
+    }, 400);
     return () => clearTimeout(timer);
   }, [propTargetStatus]);
 
